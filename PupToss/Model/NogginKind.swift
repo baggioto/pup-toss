@@ -1,7 +1,7 @@
 import CoreGraphics
 
 nonisolated enum Breed: String, CaseIterable, Sendable {
-    case shiba, pug, dalmatian, husky
+    case shiba, pug, dalmatian, husky, stray, iggy
 
     var displayName: String { rawValue.capitalized }
 }

@@ -58,6 +58,11 @@ final class GameModel {
 
     func finish() {
         isGameOver = true
+        commitBest()
+    }
+
+    /// Saves the score as the personal best if it beats it. Also called when quitting mid-round.
+    func commitBest() {
         if score > best {
             best = score
             isNewBest = true

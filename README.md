@@ -9,6 +9,9 @@ Everything runs on the device: no backend, no accounts, scores stay local.
 
 ## How it plays
 
+The app opens on a home screen with your personal best in the corner. **Play** starts a round; the pause button in the game offers Resume, Restart and Home, and the game-over card offers Play again and Home. Quitting mid-round still saves the score if it beats your best.
+
+
 - **Throw:** pull back on the slingshot. How far you pull sets power, the angle sets direction, and the shape of your drag sets curve: pull back in an arc and the throw bends the opposite way. A dotted line previews the path; the landing ring turns gold when the throw would complete a group.
 - **Merge:** 2 or more Noggins of the same breed and size merge when their edges are within the merge gap, anywhere on the lawn, with no alignment needed.
 - **Sizes:** only Pups are thrown. 2 Pups → Good Boy. 2 Good Boys → Top Dog, which plays a celebration and pops for the bonus. Top Dogs never stay on the lawn.
@@ -18,7 +21,7 @@ Everything runs on the device: no backend, no accounts, scores stay local.
 
 ### Breeds
 
-Shiba, Pug, Dalmatian, Husky. Every breed has identical physics; breed only matters for matching.
+Shiba, Pug, Dalmatian, Husky, Stray (a black street dog with flopped-over ear tips, a grey muzzle and a white bib; it's also the app icon) and Iggy (a black-and-white Boston Terrier with huge yellow-lined bat ears, heavy-lidded blue eyes and a toothy grin). Every breed has identical physics; breed only matters for matching.
 
 ### Scoring
 
@@ -59,14 +62,16 @@ Shiba, Pug, Dalmatian, Husky. Every breed has identical physics; breed only matt
 Each layer depends only on the one below it, so the game rules can be tested without a simulator.
 
 ```
-SwiftUI views     PupToss/UI      ContentView, HUD, game over
+SwiftUI views     PupToss/UI      RootView (home ↔ game), HomeView, GameView, HUD, pause, game over
 GameModel         PupToss/Model   score, chain, fouls, queue, best score (@Observable)
 Scene layer       PupToss/Scene   GameScene, Slingshot, NogginNode, NogginArt, Effects
 Game rules        PupToss/Core    MergeEngine, Scoring, RollingPhysics, CurveGesture
 ```
 
-- `PupToss/App`: app entry point.
+- `PupToss/App`: app entry point and the debug-only icon exporter.
+- `PupToss/Assets.xcassets`: the app icon.
 - `PupTossTests`: tests for merge grouping, scoring, rolling physics and the curve gesture.
+- `PupTossUITests`: taps through Home → Play → Pause → Resume → Home.
 
 ## Build and run
 
@@ -97,11 +102,28 @@ xcodebuild -project PupToss.xcodeproj -scheme PupToss \
 | `-debugGoodBoys` | Starts with 3 Good Boys side by side |
 | `-debugChain` | 2 Pups that merge into a Good Boy next to another Good Boy |
 | `-debugChain -far` | Same, with the other Good Boy about 120 pt away |
+| `-debugHUD` | Starts with a 6-digit score and a ×4 chain, for checking the top bar |
+| `-exportIcon` | Renders the 1024 × 1024 app icon into the app's Documents folder |
+| `-exportSheet` | Renders every breed at every size into `Sheet.png` in the Documents folder, for reviewing art |
+
+`-autoplay` and the `-debug…` options skip the home screen and start in the game.
+
+### Regenerating the app icon
+
+The icon is drawn from the in-game art (a Stray Top Dog on the lawn), so regenerate it after changing `NogginArt`:
+
+```sh
+xcrun simctl launch booted com.baggioto.PupToss -exportIcon
+cp "$(xcrun simctl get_app_container booted com.baggioto.PupToss data)/Documents/AppIcon.png" \
+  PupToss/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+```
+
+The exporter writes an opaque PNG, as the App Store requires.
 
 ## Roadmap
 
 - [ ] **1. Prototype:** slingshot with curve, rolling physics, collisions with squish, dust and haptics, merges with shockwaves and chains, Top Dog pops, fouls, game over, local best score *(in progress)*
 - [ ] **2. Tuning:** debug tuning panel; playtest physics values and merge gaps
 - [ ] **3. Feel:** sound, Core Haptics, better art and animation frames
-- [ ] **4. Meta:** home and results screens, Daily Lawn, Kennel collection
+- [ ] **4. Meta:** ~~home screen with personal best, navigation, app icon~~ (done); results screen, Daily Lawn, Kennel collection
 - [ ] **5. Polish and TestFlight:** onboarding, app icon, App Store assets, build automation

@@ -3,6 +3,7 @@ import SwiftUI
 struct GameOverView: View {
     let model: GameModel
     let onPlayAgain: () -> Void
+    let onHome: () -> Void
 
     var body: some View {
         ZStack {
@@ -44,15 +45,10 @@ struct GameOverView: View {
                     stat("Pops", model.pops)
                 }
 
-                Button(action: onPlayAgain) {
-                    Text("Play again")
-                        .font(.rounded(24))
-                        .foregroundStyle(Color.ink)
-                        .frame(maxWidth: .infinity, minHeight: 60)
-                        .background(Color.tangerine, in: RoundedRectangle(cornerRadius: 20))
-                        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.ink, lineWidth: 3))
-                }
-                .buttonStyle(.plain)
+                Button("Play again", action: onPlayAgain)
+                    .buttonStyle(ChunkyButtonStyle(height: 60, fontSize: 24))
+                Button("Home", action: onHome)
+                    .buttonStyle(ChunkyButtonStyle(fill: .white, height: 52, fontSize: 20, depth: 4))
             }
             .padding(.horizontal, 28)
         }

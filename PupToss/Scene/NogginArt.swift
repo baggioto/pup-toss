@@ -47,10 +47,16 @@ enum NogginArt {
 
     static func colors(for breed: Breed) -> [UIColor] {
         let look = Look.of(breed)
-        return [look.fur, look.earFill, .white]
+        switch breed {
+        case .stray: return [UIColor(hex: 0x8F8983), look.earFill, .white]
+        case .iggy: return [UIColor(hex: 0xF2DE5C), look.fur, .white]
+        default: return [look.fur, look.earFill, .white]
+        }
     }
 
-    private enum Ears { case pointy, floppy, fold }
+    /// `tipped`: ears that stand up and flop over at the tips, like a street dog's.
+    /// `bat`: huge ears angled out to the sides, like a Boston Terrier's.
+    private enum Ears { case pointy, floppy, fold, tipped, bat }
 
     private struct Look {
         var fur: UIColor
@@ -61,6 +67,20 @@ enum NogginArt {
         var ears: Ears
         var spots = false
         var mask = false
+        /// Grey frosting on the lower muzzle.
+        var chin: UIColor?
+        /// White chest tuft peeking under the chin.
+        var bib = false
+        /// Dark pupils inside a coloured iris, for eyes that would vanish on dark fur.
+        var pupils = false
+        /// Pink cheeks; muddy on dark fur, so the Stray goes without.
+        var blush = true
+        /// White stripe from the forehead down to the muzzle.
+        var blaze = false
+        /// Heavy half-closed lids over white eyes with a coloured iris: an unimpressed look.
+        var lids = false
+        /// Open mouth with a row of little teeth instead of the smile.
+        var grin = false
 
         static func of(_ breed: Breed) -> Look {
             switch breed {
@@ -76,6 +96,14 @@ enum NogginArt {
             case .husky:
                 Look(fur: UIColor(hex: 0x7D8A99), muzzle: .white, inner: UIColor(hex: 0xF4D9DF),
                      earFill: UIColor(hex: 0x7D8A99), eye: UIColor(hex: 0x2F8DE0), ears: .pointy, mask: true)
+            case .stray:
+                Look(fur: UIColor(hex: 0x2B2624), muzzle: UIColor(hex: 0x5E5853), inner: UIColor(hex: 0xC98B8F),
+                     earFill: UIColor(hex: 0x2B2624), eye: UIColor(hex: 0x8A5A32), ears: .tipped,
+                     chin: UIColor(hex: 0xA8A29B), bib: true, pupils: true, blush: false)
+            case .iggy:
+                Look(fur: UIColor(hex: 0x1F2624), muzzle: .white, inner: UIColor(hex: 0xF2DE5C),
+                     earFill: UIColor(hex: 0x1F2624), eye: UIColor(hex: 0x7FC4E8), ears: .bat,
+                     blush: false, blaze: true, lids: true, grin: true)
             }
         }
     }
@@ -131,6 +159,26 @@ enum NogginArt {
         case .fold:
             paint(polygon([(18, 34), (34, 16), (40, 40)]), look.earFill, stroke: 3)
             paint(polygon([(82, 34), (66, 16), (60, 40)]), look.earFill, stroke: 3)
+        case .tipped:
+            // Upright base, then the tip folds outward and down over a fold line.
+            for mirror in [false, true] {
+                func m(_ points: [(CGFloat, CGFloat)]) -> [(CGFloat, CGFloat)] {
+                    mirror ? points.map { (100 - $0.0, $0.1) } : points
+                }
+                paint(polygon(m([(12, 50), (9, 14), (31, 5), (47, 26)])), look.earFill, stroke: 3)
+                paint(polygon(m([(19, 42), (17, 19), (29, 13), (39, 28)])), look.inner)
+                // The flopped-over tip is its back side, a shade lighter so it reads against the head.
+                paint(polygon(m([(9, 14), (31, 5), (1, 34)])), UIColor(hex: 0x4A4340), stroke: 3)
+            }
+        case .bat:
+            for mirror in [false, true] {
+                func m(_ points: [(CGFloat, CGFloat)]) -> [(CGFloat, CGFloat)] {
+                    mirror ? points.map { (100 - $0.0, $0.1) } : points
+                }
+                paint(polygon(m([(18, 48), (-8, 4), (46, 26)])), look.earFill, stroke: 3)
+                paint(polygon(m([(19, 40), (0, 11), (38, 27)])), UIColor(hex: 0xB9AB34))
+                paint(polygon(m([(20, 35), (6, 15), (32, 27)])), look.inner)
+            }
         }
 
         paint(circle(50, 58, 37), look.fur, stroke: 3)
@@ -145,22 +193,70 @@ enum NogginArt {
             paint(ellipse(50, 72, 28, 20), .white)
         }
 
+        if look.blaze {
+            paint(polygon([(45, 23), (55, 23), (58, 60), (42, 60)]), .white)
+        }
+
+        if look.bib {
+            paint(polygon([(37, 88), (43, 98), (50, 94), (57, 98), (63, 88), (50, 84)]), .white, stroke: 2)
+        }
+
         paint(ellipse(50, 72, 20, 15), look.muzzle, stroke: 2)
-        let blush = UIColor(hex: 0xFF8FA0, alpha: 0.55)
-        paint(circle(27, 66, 5), blush)
-        paint(circle(73, 66, 5), blush)
-        paint(circle(36, 52, 5), look.eye)
-        paint(circle(64, 52, 5), look.eye)
-        paint(circle(37.6, 50.4, 1.7), .white)
-        paint(circle(65.6, 50.4, 1.7), .white)
+        if let chin = look.chin {
+            paint(ellipse(50, 80, 12, 5.5), chin)
+        }
+        if look.blush {
+            let blush = UIColor(hex: 0xFF8FA0, alpha: 0.55)
+            paint(circle(27, 66, 5), blush)
+            paint(circle(73, 66, 5), blush)
+        }
+        if look.lids {
+            for cx in [CGFloat(35), 65] {
+                paint(circle(cx, 52, 6), .white, stroke: 1.5)
+                paint(circle(cx, 52.5, 3.4), look.eye)
+                paint(circle(cx, 52.5, 1.6), .ink)
+                // Top half of the eye covered by a heavy lid.
+                let lid = UIBezierPath(arcCenter: CGPoint(x: cx, y: 52), radius: 6.6, startAngle: .pi, endAngle: 2 * .pi, clockwise: true)
+                lid.addLine(to: CGPoint(x: cx - 6.6, y: 52))
+                lid.close()
+                paint(lid, look.fur, stroke: 2)
+                paint(circle(cx + 1.6, 54.4, 1), .white)
+            }
+        } else {
+            paint(circle(36, 52, 5), look.eye)
+            paint(circle(64, 52, 5), look.eye)
+            if look.pupils {
+                paint(circle(36, 52, 2.9), .ink)
+                paint(circle(64, 52, 2.9), .ink)
+            }
+            paint(circle(37.6, 50.4, 1.7), .white)
+            paint(circle(65.6, 50.4, 1.7), .white)
+        }
         paint(ellipse(50, 65, 7, 5), .ink)
 
-        let mouth = UIBezierPath()
-        mouth.move(to: CGPoint(x: 50, y: 69))
-        mouth.addQuadCurve(to: CGPoint(x: 38, y: 72), controlPoint: CGPoint(x: 44, y: 77))
-        mouth.move(to: CGPoint(x: 50, y: 69))
-        mouth.addQuadCurve(to: CGPoint(x: 62, y: 72), controlPoint: CGPoint(x: 56, y: 77))
-        paint(mouth, nil, stroke: 2.4)
+        if look.grin {
+            let mouth = UIBezierPath()
+            mouth.move(to: CGPoint(x: 39, y: 72))
+            mouth.addQuadCurve(to: CGPoint(x: 61, y: 72), controlPoint: CGPoint(x: 50, y: 69))
+            mouth.addQuadCurve(to: CGPoint(x: 39, y: 72), controlPoint: CGPoint(x: 50, y: 88))
+            mouth.close()
+            paint(mouth, UIColor(hex: 0x5C1F2A), stroke: 2)
+            paint(ellipse(50, 80, 5, 2.4), UIColor(hex: 0xE07A8A))
+            var teeth: [(CGFloat, CGFloat)] = []
+            for i in 0...10 {
+                let x = 41 + CGFloat(i) * 1.8
+                teeth.append((x, i.isMultiple(of: 2) ? 71.6 : 75))
+            }
+            teeth.append((59, 71.4))
+            paint(polygon(teeth), .white)
+        } else {
+            let mouth = UIBezierPath()
+            mouth.move(to: CGPoint(x: 50, y: 69))
+            mouth.addQuadCurve(to: CGPoint(x: 38, y: 72), controlPoint: CGPoint(x: 44, y: 77))
+            mouth.move(to: CGPoint(x: 50, y: 69))
+            mouth.addQuadCurve(to: CGPoint(x: 62, y: 72), controlPoint: CGPoint(x: 56, y: 77))
+            paint(mouth, nil, stroke: 2.4)
+        }
 
         if kind.tier != .pup {
             let bandana = UIBezierPath()

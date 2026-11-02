@@ -80,6 +80,11 @@ final class GameScene: SKScene {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-debugGoodBoys") { debugSpawnGoodBoys() }
         if ProcessInfo.processInfo.arguments.contains("-debugChain") { debugSpawnChain() }
+        if ProcessInfo.processInfo.arguments.contains("-debugHUD") {
+            // A long score with a chain showing, for checking the top bar layout.
+            model.award(128_450, popped: false)
+            model.chain = 4
+        }
         #endif
     }
 
