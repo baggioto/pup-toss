@@ -96,6 +96,105 @@ enum Effects {
         return rock
     }
 
+    /// Water flung off a Noggin shaking itself dry.
+    static func droplets(at point: CGPoint, radius: CGFloat, in layer: SKNode) {
+        let emitter = burst(texture: dot, count: 16, at: point)
+        emitter.particleLifetime = 0.45
+        emitter.particleLifetimeRange = 0.15
+        emitter.particlePositionRange = CGVector(dx: radius, dy: radius)
+        emitter.particleSpeed = 120
+        emitter.particleSpeedRange = 60
+        emitter.particleAlpha = 0.9
+        emitter.particleAlphaSpeed = -1.8
+        emitter.particleScale = 0.3
+        emitter.particleScaleRange = 0.15
+        emitter.particleColor = UIColor(hex: 0x8ECDF2)
+        layer.addChild(emitter)
+    }
+
+    /// A squirrel running to the right (flip `xScale` to face left), with a bushy tail.
+    static func squirrel() -> SKNode {
+        let squirrel = SKNode()
+        let brown = UIColor(hex: 0xA0694A), light = UIColor(hex: 0xD6A27A)
+        let tail = CGMutablePath()
+        tail.move(to: CGPoint(x: -10, y: -4))
+        tail.addCurve(to: CGPoint(x: -26, y: 22), control1: CGPoint(x: -34, y: -6), control2: CGPoint(x: -38, y: 14))
+        tail.addCurve(to: CGPoint(x: -8, y: 6), control1: CGPoint(x: -16, y: 30), control2: CGPoint(x: -6, y: 18))
+        tail.closeSubpath()
+        let tailNode = SKShapeNode(path: tail)
+        tailNode.fillColor = light
+        tailNode.strokeColor = .ink
+        tailNode.lineWidth = 2.5
+        let body = SKShapeNode(ellipseOf: CGSize(width: 30, height: 18))
+        body.fillColor = brown
+        body.strokeColor = .ink
+        body.lineWidth = 2.5
+        let head = SKShapeNode(circleOfRadius: 8)
+        head.position = CGPoint(x: 15, y: 6)
+        head.fillColor = brown
+        head.strokeColor = .ink
+        head.lineWidth = 2.5
+        let ear = SKShapeNode(path: { let p = CGMutablePath(); p.move(to: CGPoint(x: 11, y: 12)); p.addLine(to: CGPoint(x: 13, y: 20)); p.addLine(to: CGPoint(x: 17, y: 13)); p.closeSubpath(); return p }())
+        ear.fillColor = brown
+        ear.strokeColor = .ink
+        ear.lineWidth = 2
+        let eye = SKShapeNode(circleOfRadius: 1.8)
+        eye.position = CGPoint(x: 18, y: 8)
+        eye.fillColor = .ink
+        eye.strokeColor = .clear
+        for node in [tailNode, body, ear, head, eye] { squirrel.addChild(node) }
+        tailNode.run(.repeatForever(.sequence([.rotate(byAngle: 0.2, duration: 0.1), .rotate(byAngle: -0.2, duration: 0.1)])))
+        return squirrel
+    }
+
+    /// An arrow showing the gust's direction, sized by strength, with a "Wind" label.
+    static func windIndicator() -> SKNode {
+        let indicator = SKNode()
+        let arrow = SKShapeNode(path: {
+            let p = CGMutablePath()
+            p.move(to: CGPoint(x: -22, y: 0)); p.addLine(to: CGPoint(x: 14, y: 0))
+            p.move(to: CGPoint(x: 6, y: 8)); p.addLine(to: CGPoint(x: 16, y: 0)); p.addLine(to: CGPoint(x: 6, y: -8))
+            return p
+        }())
+        arrow.name = "arrow"
+        arrow.strokeColor = .white
+        arrow.lineWidth = 5
+        arrow.lineCap = .round
+        arrow.lineJoin = .round
+        let label = SKLabelNode(text: "Wind")
+        label.fontName = "AvenirNext-Heavy"
+        label.fontSize = 13
+        label.fontColor = .white
+        label.position = CGPoint(x: 0, y: -26)
+        indicator.addChild(arrow)
+        indicator.addChild(label)
+        return indicator
+    }
+
+    /// Leaves drifting across the lawn with the wind. The scene aims and starts it.
+    static func windLeaves(across lawn: CGRect, in layer: SKNode) -> SKEmitterNode {
+        let emitter = SKEmitterNode()
+        emitter.particleTexture = chip
+        emitter.particleBirthRate = 0
+        emitter.particleLifetime = 3.5
+        emitter.particleLifetimeRange = 1
+        emitter.particlePositionRange = CGVector(dx: lawn.width, dy: lawn.height)
+        emitter.position = CGPoint(x: lawn.midX, y: lawn.midY)
+        emitter.particleAlpha = 0.8
+        emitter.particleAlphaRange = 0.2
+        emitter.particleAlphaSpeed = -0.2
+        emitter.particleScale = 0.9
+        emitter.particleScaleRange = 0.4
+        emitter.particleRotationRange = .pi * 2
+        emitter.particleRotationSpeed = 2.5
+        emitter.particleColor = UIColor(hex: 0xC9D46A)
+        emitter.particleColorBlendFactor = 1
+        emitter.particleColorGreenRange = 0.3
+        emitter.targetNode = layer
+        layer.addChild(emitter)
+        return emitter
+    }
+
     /// A ring that spreads out on a puddle where a Noggin slides through.
     static func ripple(at point: CGPoint, radius: CGFloat, in layer: SKNode) {
         let ring = SKShapeNode(circleOfRadius: radius * 0.6)

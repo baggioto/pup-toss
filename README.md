@@ -28,6 +28,28 @@ Every round starts with **Stray, Iggy, Shiba and Husky**. **Pug** joins at 500 p
 - **Continue:** leaving the app (or going Home mid-round) pauses and saves the round; the home screen then offers Continue and New game. Game over clears the save.
 - **Sound:** every effect is synthesised in code at launch (`SoundEngine`), so the app ships no audio files: bonks and thuds scaled to impact and Noggin size, the band's ticks and snap, merge pops that rise with the chain, a Top Dog fanfare, barks, a Bone chomp, puddle splashes, foul, goal and unlock chimes. It uses the ambient audio session (respects the silent switch, mixes with music). The pause menu has a Sound toggle.
 
+### Chains
+
+- **Merge on contact:** matching Noggins merge the moment they touch, at any speed.
+- **Momentum:** the merged piece carries on with 80% of its parents' motion, so it can hit the next match.
+- **Matchmaker shockwave:** a merge's shockwave steers each nearby piece toward its own nearest match instead of pushing it straight out. Shockwaves grow with the chain.
+- **Chain timer:** merges within 3 s of each other keep the chain going, even across throws; a meter on the chain badge drains toward the deadline.
+- **Chain pay:** ×1, ×2, ×4, ×7, ×11… From ×3 the screen shakes and a COMBO stamp appears.
+- **Whistle:** reaching a ×4 chain earns one (up to 3). Tap the Whistle button, then tap the lawn, and every Noggin within reach runs to that spot.
+
+### A lively lawn
+
+- **Idle scoots:** while you aim, every 1.4 s or so a Noggin scoots toward a match up to 140 pt beyond merge range (which can merge it there and then), or shuffles a little on its own.
+- **Smarter queue:** breeds are dealt from a shuffled bag so none goes missing, with a 35% lean toward breeds that have a lonely Pup on the lawn.
+
+### Pressure
+
+- **Strays wander in:** every 5 throws at first (one throw sooner per 1,500 points, never more often than every 2), a random Pup trots onto the lawn by itself.
+- **Sleepy dogs:** a Noggin that hasn't merged in 21 turns falls asleep: closed eyes and floating Z's, three times heavier, and it can't merge. A solid hit wakes it, dizzy.
+- **Gusts:** from the 6th throw, a quarter of turns bring wind. An arrow and drifting leaves show it; it pushes every moving Noggin and bends the aim line for that turn.
+- **Squirrel dash:** from the 9th throw, now and then a squirrel runs across the upper lawn and dogs near its path chase it a short way.
+- **Mystery Pups:** from the 9th piece, 12% of Pups show as "?" in Next and in the slingshot. The breed is revealed when it lands, and the aim ring never lights for one.
+
 ### Gameplay extras
 
 - **Aim line bounces:** the preview reflects once off the hedge or a rock, so bank shots can be lined up.
@@ -38,7 +60,11 @@ Every round starts with **Stray, Iggy, Shiba and Husky**. **Pug** joins at 500 p
   - **Bulldog:** four times the weight, ploughs through the lawn, never merges, and trots off at the end of the turn.
   - Specials never cause a foul.
 - **Goals:** one at a time under the top bar (×3 chain +300, 3 merges in one throw +300, 4 Good Boys +300, pop a Top Dog +500), in a random order each round.
-- **Lawn features**, rearranged each round above the foul line: sand (2.4× friction), a puddle (0.3× friction) and bouncy rocks.
+- **Lawn features**, rearranged each round above the foul line:
+  - **Sand dig spot:** 2.4× friction, pieces in sand get +24 pt merge reach, and merges there pay ×2.
+  - **Puddle:** 0.3× friction; a Noggin that crossed water shakes itself dry when it stops, nudging nearby pieces toward their matches.
+  - **Rocks:** solid and bouncy.
+  - **Bowl:** a gentle slope (shown as a faint worn patch) pulls rolling Noggins toward the middle of the upper lawn; the aim line bends with it.
 - **Last chance:** on 2 fouls or with 18+ pieces on the lawn, a warning shows; as the throw slows to land, time drops to 40% and the camera zooms in.
 
 ### Feel

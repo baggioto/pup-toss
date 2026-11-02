@@ -56,6 +56,50 @@ enum NogginArt {
         return image
     }
 
+    private static var mysteryImages: [CGFloat: UIImage] = [:]
+    private static var mysteryTextures: [CGFloat: SKTexture] = [:]
+
+    /// A grey silhouette with a "?" for a Mystery Pup, sized like a Noggin of head `radius`.
+    static func mysteryImage(radius: CGFloat) -> UIImage {
+        if let cached = mysteryImages[radius] { return cached }
+        let unit = radius / 37
+        let side = ceil(132 * unit)
+        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { context in
+            let cg = context.cgContext
+            cg.translateBy(x: side / 2, y: side / 2)
+            cg.scaleBy(x: unit, y: unit)
+            cg.translateBy(x: -50, y: -58)
+            let fill = UIColor(hex: 0xB9B3AD)
+            for points in [[(16, 44), (20, 6), (48, 28)], [(84, 44), (80, 6), (52, 28)]] as [[(CGFloat, CGFloat)]] {
+                let ear = UIBezierPath()
+                for (i, p) in points.enumerated() {
+                    if i == 0 { ear.move(to: CGPoint(x: p.0, y: p.1)) } else { ear.addLine(to: CGPoint(x: p.0, y: p.1)) }
+                }
+                ear.close()
+                fill.setFill(); ear.fill()
+                UIColor.ink.setStroke(); ear.lineWidth = 3; ear.lineJoinStyle = .round; ear.stroke()
+            }
+            let head = UIBezierPath(ovalIn: CGRect(x: 13, y: 21, width: 74, height: 74))
+            fill.setFill(); head.fill()
+            UIColor.ink.setStroke(); head.lineWidth = 3; head.stroke()
+            let font = UIFont.systemFont(ofSize: 50, weight: .black)
+            let rounded = font.fontDescriptor.withDesign(.rounded).map { UIFont(descriptor: $0, size: 50) } ?? font
+            let mark = NSAttributedString(string: "?", attributes: [.font: rounded, .foregroundColor: UIColor.white,
+                                                                     .strokeColor: UIColor.ink, .strokeWidth: -5])
+            let size = mark.size()
+            mark.draw(at: CGPoint(x: 50 - size.width / 2, y: 58 - size.height / 2))
+        }
+        mysteryImages[radius] = image
+        return image
+    }
+
+    static func mysteryTexture(radius: CGFloat) -> SKTexture {
+        if let cached = mysteryTextures[radius] { return cached }
+        let texture = SKTexture(image: mysteryImage(radius: radius))
+        mysteryTextures[radius] = texture
+        return texture
+    }
+
     /// A cream bone lying across the head's circle; it has no face.
     private static func drawBone() {
         let bone = UIBezierPath(roundedRect: CGRect(x: 22, y: 51, width: 56, height: 14), cornerRadius: 6)

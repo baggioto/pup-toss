@@ -14,11 +14,24 @@ final class GameModel {
     private(set) var score = 0
     private(set) var best: Int
     var chain = 0
+    /// When the current chain runs out unless another merge lands (drives the badge's meter).
+    var chainDeadline: Date?
+    /// The chain length the badge's meter counts down from, in seconds.
+    var chainWindow: TimeInterval { TimeInterval(tuning.chainWindow) }
+    static let maxWhistles = 3
+    /// Earned by reaching a ×4 chain. Tap to arm, then tap the lawn to call nearby dogs.
+    private(set) var whistles = 0
+    var isWhistleArmed = false
+    /// Breeds with a Pup on the lawn that has no partner; the queue leans toward them.
+    var lonelyBreeds: [Breed] = []
+    private var bag = BreedBag()
     private(set) var fouls = 0
     private(set) var throwsMade = 0
     private(set) var merges = 0
     private(set) var pops = 0
     private(set) var upcoming: [NogginKind] = []
+    /// Which upcoming pieces are Mystery Pups, shown as "?" until they land.
+    private(set) var upcomingMystery: [Bool] = []
     private(set) var isGameOver = false
     private(set) var isNewBest = false
     private(set) var goals = GoalTracker()
@@ -82,14 +95,29 @@ final class GameModel {
         completedGoal = nil
         newBreed = nil
         isLastChance = false
+        chainDeadline = nil
+        whistles = 0
+        isWhistleArmed = false
+        lonelyBreeds = []
+        bag = BreedBag()
         generated = 0
-        upcoming = (0..<3).map { _ in nextKind() }
+        upcoming = []
+        upcomingMystery = []
+        for _ in 0..<3 { queueNext() }
     }
 
-    func takeNext() -> NogginKind {
-        let kind = upcoming.removeFirst()
-        upcoming.append(nextKind())
-        return kind
+    /// The next piece for the slingshot, and whether it's a Mystery Pup.
+    func takeNext() -> (kind: NogginKind, mystery: Bool) {
+        let next = (upcoming.removeFirst(), upcomingMystery.removeFirst())
+        queueNext()
+        return next
+    }
+
+    private func queueNext() {
+        let kind = nextKind()
+        upcoming.append(kind)
+        // From the ninth piece, an ordinary Pup sometimes arrives as a mystery.
+        upcomingMystery.append(generated > 8 && kind.special == nil && Double.random(in: 0..<1) < Double(tuning.mysteryChance))
     }
 
     /// Counts a merge toward the current goal, awarding its bonus when it completes.
@@ -103,6 +131,19 @@ final class GameModel {
 
     func throwEnded() {
         goals.throwEnded()
+    }
+
+    /// Adds a Whistle, up to the maximum. Returns whether one was added.
+    @discardableResult
+    func earnWhistle() -> Bool {
+        guard whistles < Self.maxWhistles else { return false }
+        whistles += 1
+        return true
+    }
+
+    func useWhistle() {
+        whistles = max(0, whistles - 1)
+        isWhistleArmed = false
     }
 
     func recordThrow() {
@@ -128,7 +169,7 @@ final class GameModel {
     func snapshot(pieces: [SavedGame.Piece], loaded: NogginKind?, features: LawnFeatures) -> SavedGame {
         SavedGame(score: score, fouls: fouls, throwsMade: throwsMade, merges: merges, pops: pops,
                   upcoming: upcoming, generated: generated, goals: goals,
-                  pieces: pieces, loaded: loaded, features: features)
+                  pieces: pieces, loaded: loaded, features: features, whistles: whistles)
     }
 
     func restore(_ game: SavedGame) {
@@ -139,8 +180,10 @@ final class GameModel {
         merges = game.merges
         pops = game.pops
         upcoming = game.upcoming
+        upcomingMystery = Array(repeating: false, count: game.upcoming.count)
         generated = game.generated
         goals = game.goals
+        whistles = game.whistles ?? 0
     }
 
     /// Returns true when this foul ends the game.
@@ -173,6 +216,8 @@ final class GameModel {
             if roll < 0.10 { return .special(.bone) }
             if roll < 0.14 { return .special(.bulldog) }
         }
-        return NogginKind(breed: availableBreeds.randomElement() ?? .shiba, tier: .pup)
+        var generator = SystemRandomNumberGenerator()
+        let breed = bag.draw(available: availableBreeds, lonely: lonelyBreeds, bias: Double(tuning.queueBias), using: &generator)
+        return NogginKind(breed: breed, tier: .pup)
     }
 }

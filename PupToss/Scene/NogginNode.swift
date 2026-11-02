@@ -18,10 +18,19 @@ final class NogginNode: SKNode {
     var trail: SKEmitterNode?
     /// When this Noggin last left a skid mark, to space them out.
     var lastSkid: TimeInterval = 0
+    /// Crossed a puddle; shakes itself dry when it comes to rest.
+    var isWet = false
+    /// Turns since this Noggin arrived without merging; bored dogs fall asleep.
+    var idleTurns = 0
+    /// Asleep: heavy, can't merge, until a hard hit wakes it.
+    private(set) var isAsleep = false
+    /// A Mystery Pup hides its breed under a "?" until it lands.
+    private(set) var isMystery = false
+    private var mysteryMask: SKSpriteNode?
 
     /// The resting face: calm (blinks now and then), happy (a match is close by) or nervous
     /// (stretched tight in the slingshot). Short reactions play over it and then return to it.
-    enum Mood { case calm, happy, nervous }
+    enum Mood { case calm, happy, nervous, asleep }
 
     var mood = Mood.calm {
         didSet { if mood != oldValue { showMood() } }
@@ -32,6 +41,7 @@ final class NogginNode: SKNode {
         case .calm: .normal
         case .happy: .happy
         case .nervous: .wince
+        case .asleep: .blink
         }
     }
 
@@ -111,6 +121,56 @@ final class NogginNode: SKNode {
             rest,
         ])
         return .sequence([rest, .repeatForever(blink)])
+    }
+
+    func fallAsleep() {
+        guard !isAsleep else { return }
+        isAsleep = true
+        mood = .asleep
+        physicsBody?.mass *= 3
+        let z = SKLabelNode(text: "z")
+        z.name = "zees"
+        z.fontName = "AvenirNext-Heavy"
+        z.fontSize = 14 + radius * 0.2
+        z.fontColor = .white
+        z.zPosition = 2
+        let start = CGPoint(x: radius * 0.6, y: radius * 0.7)
+        z.position = start
+        z.alpha = 0
+        z.run(.repeatForever(.sequence([
+            .move(to: start, duration: 0),
+            .fadeIn(withDuration: 0.1),
+            .group([.moveBy(x: 10, y: 22, duration: 1), .fadeOut(withDuration: 1)]),
+            .wait(forDuration: 0.2),
+        ])))
+        addChild(z)
+    }
+
+    func wakeUp() {
+        guard isAsleep else { return }
+        isAsleep = false
+        idleTurns = 0
+        physicsBody?.mass /= 3
+        childNode(withName: "zees")?.removeFromParent()
+        mood = .calm
+        react(.dizzy, for: 0.9)
+    }
+
+    func hideAsMystery() {
+        isMystery = true
+        let mask = SKSpriteNode(texture: NogginArt.mysteryTexture(radius: radius))
+        mask.zPosition = 1
+        art.addChild(mask)
+        mysteryMask = mask
+    }
+
+    /// Lifts the "?" with a little puff to show the real breed.
+    func revealMystery() {
+        guard isMystery, let mask = mysteryMask else { return }
+        isMystery = false
+        mysteryMask = nil
+        mask.run(.sequence([.group([.scale(to: 1.4, duration: 0.18), .fadeOut(withDuration: 0.18)]), .removeFromParent()]))
+        popIn()
     }
 
     func popIn() {

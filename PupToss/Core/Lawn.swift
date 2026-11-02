@@ -29,14 +29,26 @@ nonisolated struct LawnFeatures: Codable, Sendable {
         var radius: CGFloat
     }
 
+    /// A gentle slope that draws rolling Noggins toward the middle of the upper lawn.
+    nonisolated struct Bowl: Codable, Sendable {
+        var center: CGPoint
+        /// Pull in pt/s² at full reach; it fades within `radius` so pieces don't jiggle at the centre.
+        var strength: CGFloat
+        var radius: CGFloat = 150
+    }
+
     var patches: [Patch] = []
     var rocks: [Rock] = []
+    var bowl: Bowl?
+    /// This turn's gust, in pt/s². Like the bowl, it only pushes moving Noggins.
+    var wind: CGVector = .zero
 
     static let none = LawnFeatures()
 
-    /// The same layout with sand and puddles feeling like `sand` and `puddle` (for live tuning).
-    func with(sand: Surface, puddle: Surface) -> LawnFeatures {
+    /// The same layout with sand, puddles and the bowl re-tuned (for live tuning).
+    func with(sand: Surface, puddle: Surface, bowlStrength: CGFloat? = nil) -> LawnFeatures {
         var copy = self
+        if let bowlStrength { copy.bowl?.strength = bowlStrength }
         copy.patches = patches.map { patch in
             var patch = patch
             switch patch.ground {
@@ -49,6 +61,19 @@ nonisolated struct LawnFeatures: Codable, Sendable {
         return copy
     }
 
+    /// The bowl's pull plus the wind at `point`, in pt/s².
+    func push(at point: CGPoint) -> CGVector {
+        guard let bowl else { return wind }
+        let offset = bowl.center - point
+        return offset.normalized * (bowl.strength * min(1, offset.length / bowl.radius)) + wind
+    }
+
+    func ground(at point: CGPoint) -> Ground? {
+        patches.first { $0.center.distance(to: point) <= $0.radius }?.ground
+    }
+
+    func isSand(at point: CGPoint) -> Bool { ground(at: point) == .sand }
+
     func surface(at point: CGPoint) -> Surface {
         patches.first { $0.center.distance(to: point) <= $0.radius }?.surface ?? .grass
     }
@@ -57,6 +82,7 @@ nonisolated struct LawnFeatures: Codable, Sendable {
     /// (so the launch zone stays clear).
     static func random<G: RandomNumberGenerator>(in lawn: CGRect, above minY: CGFloat, using generator: inout G) -> LawnFeatures {
         var features = LawnFeatures()
+        features.bowl = Bowl(center: CGPoint(x: lawn.midX, y: (minY + lawn.maxY) / 2), strength: 70)
         var placed: [(CGPoint, CGFloat)] = []
 
         func place(radius: ClosedRange<CGFloat>) -> (CGPoint, CGFloat)? {

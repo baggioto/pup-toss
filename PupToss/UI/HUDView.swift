@@ -27,7 +27,7 @@ struct HUDView: View {
             // The chain rides on the score card's corner, so it never takes space in the row.
             .overlay(alignment: .topTrailing) {
                 if model.chain > 1 {
-                    ChainBadge(chain: model.chain)
+                    ChainBadge(chain: model.chain, deadline: model.chainDeadline, window: model.chainWindow)
                         .offset(x: 16, y: -10)
                         .transition(.scale(scale: 0.2).combined(with: .opacity))
                 }
@@ -48,7 +48,9 @@ struct HUDView: View {
             card("Next") {
                 HStack(spacing: 2) {
                     ForEach(Array(model.upcoming.prefix(2).enumerated()), id: \.offset) { index, kind in
-                        Image(uiImage: NogginArt.image(for: kind, radius: index == 0 ? 11 : 8))
+                        let radius: CGFloat = index == 0 ? 11 : 8
+                        Image(uiImage: model.upcomingMystery.indices.contains(index) && model.upcomingMystery[index]
+                              ? NogginArt.mysteryImage(radius: radius) : NogginArt.image(for: kind, radius: radius))
                             .opacity(index == 0 ? 1 : 0.55)
                     }
                 }
@@ -82,14 +84,28 @@ struct HUDView: View {
 /// little with each one, up to ×6.
 private struct ChainBadge: View {
     let chain: Int
+    /// When the chain runs out; the meter under the number drains toward it.
+    let deadline: Date?
+    let window: TimeInterval
 
     var body: some View {
-        Text("×\(chain)")
-            .font(.rounded(15))
-            .monospacedDigit()
+        VStack(spacing: 2) {
+            Text("×\(Scoring.chainMultiplier(chain))")
+                .font(.rounded(15))
+                .monospacedDigit()
+            TimelineView(.animation) { context in
+                let left = deadline.map { max(0, $0.timeIntervalSince(context.date)) / max(window, 0.01) } ?? 0
+                Capsule()
+                    .fill(Color.ink.opacity(0.2))
+                    .frame(width: 30, height: 4)
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(Color.ink).frame(width: 30 * min(1, left), height: 4)
+                    }
+            }
+        }
             .foregroundStyle(Color.ink)
             .padding(.horizontal, 8)
-            .padding(.vertical, 2)
+            .padding(.vertical, 3)
             .background(Color.sunny, in: Capsule())
             .overlay(Capsule().stroke(Color.ink, lineWidth: 2.5))
             .rotationEffect(.degrees(8))

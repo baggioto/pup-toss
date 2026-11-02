@@ -6,6 +6,8 @@ nonisolated struct SavedGame: Codable, Sendable {
     nonisolated struct Piece: Codable, Sendable {
         var kind: NogginKind
         var position: CGPoint
+        /// Added later; older saves have none.
+        var asleep: Bool? = nil
     }
 
     static let currentVersion = 1
@@ -24,6 +26,8 @@ nonisolated struct SavedGame: Codable, Sendable {
     /// the turn finishes resolving on resume.
     var loaded: NogginKind?
     var features: LawnFeatures
+    /// Added later; older saves have none.
+    var whistles: Int?
 }
 
 /// Reads and writes the one saved round, as JSON in Application Support.

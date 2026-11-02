@@ -16,11 +16,14 @@ nonisolated struct RollingPhysics: Sendable {
     /// Below this speed curve no longer applies and the piece counts as still.
     var restSpeed: CGFloat = 5
 
-    func step(velocity: inout CGVector, spin: inout CGFloat, dt: CGFloat, surface: Surface = .grass) {
+    /// `push` is an outside acceleration (the lawn's bowl) that only acts on a moving Noggin, so
+    /// resting pieces stay put.
+    func step(velocity: inout CGVector, spin: inout CGFloat, dt: CGFloat, surface: Surface = .grass, push: CGVector = .zero) {
         var v = velocity
         if v.length > restSpeed {
             // Positive (counter-clockwise) spin pushes to the left of travel.
             v += v.normalized.perpendicular * (curve * spin * dt)
+            v += push * dt
         }
         let speed = v.length
         if speed > 0 {
@@ -53,7 +56,7 @@ nonisolated struct RollingPhysics: Sendable {
         var bouncesLeft = bounces
         var points = [start]
         while t < maxTime {
-            step(velocity: &v, spin: &w, dt: dt, surface: features.surface(at: p))
+            step(velocity: &v, spin: &w, dt: dt, surface: features.surface(at: p), push: features.push(at: p))
             if v.length == 0 { break }
             var next = p + v * dt
 

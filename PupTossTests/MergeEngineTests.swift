@@ -90,7 +90,13 @@ struct ScoringTests {
     }
 
     @Test func chainMultiplies() {
-        #expect(Scoring.points(for: group(.pup, count: 2), chain: 3) == 90)
+        // Chain multipliers run ×1, ×2, ×4, ×7, ×11.
+        #expect(Scoring.points(for: group(.pup, count: 2), chain: 3) == 120)
         #expect(Scoring.points(for: group(.goodBoy, count: 2), chain: 2) == 1000)
+        #expect((1...5).map(Scoring.chainMultiplier) == [1, 2, 4, 7, 11])
+    }
+
+    @Test func sandMergesPayDouble() {
+        #expect(Scoring.points(for: group(.pup, count: 2), chain: 1, bonus: 2) == 60)
     }
 }

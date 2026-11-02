@@ -13,10 +13,25 @@ final class GameScene: SKScene {
     private var baseFeatures = LawnFeatures.none
     private var appliedTuning = Tuning.standard
     private var pendingRestore: SavedGame?
+    /// Matching Noggins that touched since the last frame; they merge whatever their speed.
+    private var pendingContacts: Set<ObjectIdentifier> = []
+    private var lastMergeTime: Date?
+    private var sinceScoot: TimeInterval = 0
+    private var nextScoot: TimeInterval = 1.4
+    /// A Whistle call moves the lawn without a throw; the loaded Noggin stays in the slingshot.
+    private var whistleTurn = false
     private let walls = SKNode()
     private let sound = SoundEngine.shared
     private let lawnRect = CGRect(x: 16, y: 40, width: 358, height: 676)
     private let foulY: CGFloat = 236
+    /// The top of the area strays, squirrels and the wind arrow use, below the top hedge.
+    private var upperY: CGFloat { lawnRect.maxY - 70 }
+    private let foulLine = SKShapeNode()
+    private let launchZone = SKSpriteNode(color: UIColor(white: 0, alpha: 0.08), size: .zero)
+    private var throwsSinceStray = 0
+    private var windIndicator: SKNode?
+    private var windLeaves: SKEmitterNode?
+    private var squirrelRunning = false
     private let anchor = CGPoint(x: 195, y: 148)
     private let rollingStep: CGFloat = 1.0 / 120.0
 
@@ -170,12 +185,30 @@ final class GameScene: SKScene {
 
     private var autoplay: Bool { ProcessInfo.processInfo.arguments.contains("-autoplay") }
 
+    /// Tries a spread of pulls on the aim line and takes one that lands on a match, like a player
+    /// would; falls back to a random pull that clears the foul line.
     private func debugAutoThrow() {
-        let angle = CGFloat.random(in: -0.5...0.5)
-        let length = CGFloat.random(in: 30...Slingshot.maxPull)
+        guard let loaded else { return }
+        var fallback: (CGVector, CGFloat)?
+        var best: (CGVector, CGFloat)?
+        for _ in 0..<40 {
+            let angle = CGFloat.random(in: -0.6...0.6)
+            let length = CGFloat.random(in: 34...Slingshot.maxPull)
+            let pull = CGVector(dx: sin(angle) * length, dy: -cos(angle) * length)
+            let spin = CGFloat.random(in: -4...4)
+            let path = rolling.predictPath(from: anchor, velocity: pull * (-Slingshot.launchScale * tuning.power), spin: spin,
+                                           radius: loaded.radius, bounds: lawnRect, features: features)
+            guard let end = path.last, end.y > foulY + 40 else { continue }
+            if fallback == nil { fallback = (pull, spin) }
+            if completesGroup(loaded.kind, at: end) {
+                best = (pull, spin)
+                break
+            }
+        }
+        guard let (pull, spin) = best ?? fallback else { return }
         slingshot.beginHold()
-        slingshot.setPull(CGVector(dx: sin(angle) * length, dy: -cos(angle) * length))
-        slingshot.fire(velocity: slingshot.pull * -Slingshot.launchScale, spin: CGFloat.random(in: -4...4))
+        slingshot.setPull(pull)
+        slingshot.fire(velocity: pull * (-Slingshot.launchScale * tuning.power), spin: spin)
         phase = .resolving
     }
 
@@ -206,7 +239,7 @@ final class GameScene: SKScene {
     func snapshot() -> SavedGame? {
         guard phase != .gameOver, !model.isGameOver else { return nil }
         let resting = pieces.filter { !$0.isMerging && !$0.kind.isVisitor && $0.physicsBody != nil }
-        return model.snapshot(pieces: resting.map { SavedGame.Piece(kind: $0.kind, position: $0.position) },
+        return model.snapshot(pieces: resting.map { SavedGame.Piece(kind: $0.kind, position: $0.position, asleep: $0.isAsleep) },
                               loaded: loaded?.kind, features: baseFeatures)
     }
 
@@ -225,6 +258,7 @@ final class GameScene: SKScene {
         boneLure = nil
         endDrama(animated: false)
         model.restore(game)
+        resetPressure()
         baseFeatures = game.features
         drawFeatures()
         for piece in game.pieces {
@@ -233,6 +267,7 @@ final class GameScene: SKScene {
             add(node)
             node.activatePhysics(velocity: .zero, spin: 0, bounce: tuning.nogginBounce)
             node.trail = Effects.grassTrail(in: shadowLayer)
+            if piece.asleep == true { node.fallAsleep() }
             pieces.append(node)
         }
         if let kind = game.loaded {
@@ -259,8 +294,15 @@ final class GameScene: SKScene {
         boneLure = nil
         endDrama(animated: false)
         model.reset()
+        resetPressure()
         layOutFeatures()
         loadNext()
+    }
+
+    private func resetPressure() {
+        throwsSinceStray = 0
+        squirrelRunning = false
+        setWind(.zero)
     }
 
     /// A fresh arrangement of sand, puddles and rocks each round (none in the debug scenarios).
@@ -278,10 +320,20 @@ final class GameScene: SKScene {
 
     private func drawFeatures() {
         featureLayer.removeAllChildren()
-        features = baseFeatures.with(sand: tuning.sand, puddle: tuning.puddle)
+        features = baseFeatures.with(sand: tuning.sand, puddle: tuning.puddle, bowlStrength: tuning.bowl)
         for patch in features.patches {
             featureLayer.addChild(patch.ground == .puddle ? Effects.puddle(radius: patch.radius) : Effects.sandPatch(radius: patch.radius))
             featureLayer.children.last?.position = patch.center
+        }
+        if let bowl = features.bowl {
+            // A faint worn patch shows where the lawn dips.
+            let dip = SKShapeNode(circleOfRadius: bowl.radius)
+            dip.position = bowl.center
+            dip.fillColor = UIColor(white: 1, alpha: 0.06)
+            dip.strokeColor = UIColor(white: 1, alpha: 0.1)
+            dip.lineWidth = 2
+            dip.zPosition = -0.1
+            featureLayer.addChild(dip)
         }
         for rock in features.rocks {
             let node = Effects.rock(radius: rock.radius)
@@ -297,9 +349,15 @@ final class GameScene: SKScene {
     }
 
     private func loadNext() {
-        let node = NogginNode(kind: model.takeNext())
+        let next = model.takeNext()
+        let node = NogginNode(kind: next.kind)
+        if next.mystery { node.hideAsMystery() }
         add(node)
         node.popIn()
+        rollGust()
+        if model.throwsMade >= 8, CGFloat.random(in: 0..<1) < tuning.squirrelChance {
+            after(.random(in: 1.0...2.2)) { [weak self] in self?.squirrelDash() }
+        }
         loaded = node
         slingshot.load(node)
         phase = .aiming
@@ -309,7 +367,8 @@ final class GameScene: SKScene {
         if autoplay { print("[camera] scale=\(String(format: "%.2f", cameraNode.xScale)) at=\(Int(cameraNode.position.x)),\(Int(cameraNode.position.y)) lastChance=\(model.isLastChance)") }
         #endif
         #if DEBUG
-        if autoplay { after(0.3) { [weak self] in self?.debugAutoThrow() } }
+        // Autoplay aims for about as long as a person would, so idle scoots get their chance.
+        if autoplay { after(2.5) { [weak self] in self?.debugAutoThrow() } }
         #endif
     }
 
@@ -317,7 +376,6 @@ final class GameScene: SKScene {
         node.activatePhysics(velocity: velocity, spin: spin, bounce: tuning.nogginBounce)
         pieces.append(node)
         loaded = nil
-        model.chain = 0
         model.recordThrow()
         stillTime = 0
         phase = .rolling
@@ -333,19 +391,17 @@ final class GameScene: SKScene {
         }
     }
 
-    /// Merges every group found among pieces slower than `maxSpeed`. Returns whether any merged.
+    /// Merges every group found among pieces slower than `maxSpeed`, plus any in `touching`
+    /// (matching pieces that just bumped, which merge at any speed). Returns whether any merged.
     @discardableResult
-    private func mergeCheck(maxSpeed: CGFloat) -> Bool {
+    private func mergeCheck(maxSpeed: CGFloat, touching: Set<ObjectIdentifier> = []) -> Bool {
         let candidates = pieces.filter { node in
-            guard !node.isMerging, let body = node.physicsBody else { return false }
-            return body.velocity.length < maxSpeed
+            guard !node.isMerging, !node.isAsleep, let body = node.physicsBody else { return false }
+            return body.velocity.length < maxSpeed || touching.contains(ObjectIdentifier(node))
         }
-        let groups = MergeEngine.groups(
-            in: candidates.enumerated().map { MergePiece(id: $0.offset, kind: $0.element.kind, position: $0.element.position) },
-            gaps: tuning.gaps
-        )
+        let groups = MergeEngine.groups(in: candidates.enumerated().map { mergePiece($0.offset, $0.element) }, gaps: tuning.gaps)
         guard !groups.isEmpty else { return false }
-        model.chain += 1
+        advanceChain()
         for group in groups {
             merge(group.ids.map { candidates[$0] }, as: group)
         }
@@ -353,9 +409,58 @@ final class GameScene: SKScene {
         return true
     }
 
+    /// A piece as the merge rules see it; sitting in sand gives it extra reach.
+    private func mergePiece(_ id: Int, _ node: NogginNode, at position: CGPoint? = nil) -> MergePiece {
+        let position = position ?? node.position
+        return MergePiece(id: id, kind: node.kind, position: position,
+                          gapBonus: features.isSand(at: position) ? tuning.sandGapBonus : 0)
+    }
+
+    /// Merges within the chain window of the last one extend the chain; otherwise it starts over.
+    /// Long chains earn a Whistle at ×4 and shake the screen from ×3.
+    private func advanceChain() {
+        let now = Date()
+        if let last = lastMergeTime, now.timeIntervalSince(last) <= model.chainWindow {
+            model.chain += 1
+        } else {
+            model.chain = 1
+        }
+        lastMergeTime = now
+        model.chainDeadline = now.addingTimeInterval(model.chainWindow)
+        let chain = model.chain
+        #if DEBUG
+        if autoplay { print("[chain] \(chain) phase=\(phase)") }
+        #endif
+        guard chain >= 3 else { return }
+        if !dramaActive { shakeCamera(strength: CGFloat(min(chain, 6)) * 2) }
+        Effects.floatingText("×\(Scoring.chainMultiplier(chain)) COMBO!", at: CGPoint(x: lawnRect.midX, y: lawnRect.maxY - 90),
+                             color: UIColor(hex: 0xFF8A3D), size: 30 + CGFloat(min(chain, 6)) * 3, in: fxLayer)
+        if chain == 4, model.earnWhistle() {
+            Effects.floatingText("Whistle earned!", at: CGPoint(x: lawnRect.midX, y: lawnRect.maxY - 140),
+                                 color: UIColor(hex: 0xFFE27A), size: 22, in: fxLayer)
+            sound.play(.unlock)
+        }
+    }
+
+    private func shakeCamera(strength: CGFloat) {
+        guard cameraNode.action(forKey: "shake") == nil else { return }
+        var moves: [SKAction] = []
+        var offset = CGVector.zero
+        for _ in 0..<5 {
+            let next = CGVector(dx: .random(in: -strength...strength), dy: .random(in: -strength...strength))
+            moves.append(.moveBy(x: next.dx - offset.dx, y: next.dy - offset.dy, duration: 0.035))
+            offset = next
+        }
+        moves.append(.moveBy(x: -offset.dx, y: -offset.dy, duration: 0.05))
+        cameraNode.run(.sequence(moves), withKey: "shake")
+    }
+
     private func merge(_ nodes: [NogginNode], as group: MergeGroup) {
         activeMerges += 1
         let target = group.centroid
+        // The merged piece carries on with the pair's combined motion.
+        let carried = nodes.reduce(CGVector.zero) { $0 + ($1.physicsBody?.velocity ?? .zero) } * (1 / CGFloat(nodes.count))
+        let inSand = features.isSand(at: target)
         for node in nodes {
             node.isMerging = true
             node.physicsBody = nil
@@ -369,7 +474,11 @@ final class GameScene: SKScene {
         after(0.2) { [weak self] in
             guard let self else { return }
             for node in nodes { self.remove(node) }
-            let points = Scoring.points(for: group, chain: self.model.chain)
+            let points = Scoring.points(for: group, chain: self.model.chain, bonus: inSand ? Double(self.tuning.sandScore) : 1)
+            if inSand {
+                Effects.floatingText("Dig spot ×\(String(format: "%g", Double(self.tuning.sandScore)))!", at: target + CGVector(dx: 0, dy: 56),
+                                     color: UIColor(hex: 0xF2D58A), size: 20, in: self.fxLayer)
+            }
             self.model.award(points, popped: group.pops)
             let kind = NogginKind(breed: group.kind.breed, tier: group.kind.tier.next ?? .topDog)
             if let goal = self.model.recordMerge(into: kind.tier) {
@@ -380,26 +489,29 @@ final class GameScene: SKScene {
             if group.pops {
                 self.celebrateTopDog(kind, at: target, points: points)
             } else {
-                self.spawnMerged(kind, at: target)
+                self.spawnMerged(kind, at: target, velocity: carried * self.tuning.momentum)
                 Effects.floatingText("+\(points)", at: target + CGVector(dx: 0, dy: 30), color: .white, size: 26, in: self.fxLayer)
                 self.activeMerges -= 1
             }
             if self.model.chain > 1 {
-                Effects.floatingText("Chain ×\(self.model.chain)", at: target + CGVector(dx: 0, dy: -36), color: UIColor(hex: 0xFF8A3D), size: 20, in: self.fxLayer)
+                Effects.floatingText("Chain ×\(self.model.chain)", at: target + CGVector(dx: 0, dy: -36), color: UIColor(hex: 0xFF8A3D),
+                                     size: 18 + CGFloat(min(self.model.chain, 6)) * 2, in: self.fxLayer)
             }
         }
     }
 
-    private func spawnMerged(_ kind: NogginKind, at point: CGPoint) {
+    private func spawnMerged(_ kind: NogginKind, at point: CGPoint, velocity: CGVector = .zero) {
         let node = NogginNode(kind: kind)
         node.position = point.clamped(to: lawnRect.insetBy(dx: kind.radius + 2, dy: kind.radius + 2))
         add(node)
-        node.activatePhysics(velocity: .zero, spin: 0, bounce: tuning.nogginBounce)
+        node.activatePhysics(velocity: velocity, spin: 0, bounce: tuning.nogginBounce)
         node.popIn()
         node.react(.happy, for: 0.8)
         node.trail = Effects.grassTrail(in: shadowLayer)
         pieces.append(node)
-        shockwave(at: node.position, reach: kind.radius * 3.2, strength: 260, sparing: kind)
+        // Shockwaves grow with the chain.
+        let boost = 1 + 0.15 * CGFloat(max(0, model.chain - 1))
+        shockwave(at: node.position, reach: kind.radius * 3.2 * boost, strength: 260 * boost, sparing: kind)
         callFriends(of: node)
         Effects.confetti(at: node.position, colors: NogginArt.colors(for: kind.breed), amount: 10, in: fxLayer)
         heavyHaptic.impactOccurred(intensity: 0.7)
@@ -447,24 +559,44 @@ final class GameScene: SKScene {
         }
     }
 
-    /// Pushes nearby pieces outward. Pieces of `sparing` kind are left alone so a fresh merge
-    /// doesn't blow away the very pieces it could merge with next.
-    private func shockwave(at point: CGPoint, reach: CGFloat, strength: CGFloat, sparing: NogginKind?) {
-        Effects.shockRing(at: point, radius: reach, in: fxLayer)
-        for node in pieces where node.kind != sparing {
+    /// Jolts nearby pieces. With the matchmaker on, each one is steered toward its own nearest
+    /// match (rolling just far enough to meet it) instead of straight outward. Pieces of `sparing`
+    /// kind are left alone so a fresh merge doesn't blow away its own next partners; `steerOnly`
+    /// leaves pieces with no match nearby where they are.
+    private func shockwave(at point: CGPoint, reach: CGFloat, strength: CGFloat, sparing: NogginKind?,
+                           steerOnly: Bool = false, excluding: NogginNode? = nil, showRing: Bool = true) {
+        if showRing { Effects.shockRing(at: point, radius: reach, in: fxLayer) }
+        for node in pieces where node.kind != sparing && node !== excluding && !node.isMerging {
             guard let body = node.physicsBody else { continue }
             let offset = node.position - point
             let distance = offset.length
             guard distance < reach, distance > 0.1 else { continue }
-            body.velocity += offset.normalized * (strength * (1 - distance / reach))
+            let outward = offset.normalized * (strength * (1 - distance / reach))
+            guard tuning.matchmaker > 0, let partner = nearestMatch(for: node, within: 220) else {
+                if !steerOnly { body.velocity += outward }
+                continue
+            }
+            let toPartner = partner.position - node.position
+            let travel = max(0, toPartner.length - node.radius - partner.radius - tuning.gaps.gap(for: node.kind.tier) * 0.4)
+            let friction = rolling.friction * features.surface(at: node.position).friction
+            let steer = toPartner.normalized * min(520, sqrt(2 * friction * travel) * 1.12)
+            body.velocity += steer * tuning.matchmaker + (steerOnly ? .zero : outward * (1 - tuning.matchmaker))
         }
+    }
+
+    private func nearestMatch(for node: NogginNode, within reach: CGFloat) -> NogginNode? {
+        pieces.filter { other in
+            other !== node && !other.isMerging && !other.isAsleep && other.physicsBody != nil && Self.couldMerge(node.kind, other.kind)
+                && other.position.distance(to: node.position) < reach
+        }
+        .min { $0.position.distance(to: node.position) < $1.position.distance(to: node.position) }
     }
 
     /// Matching pieces within twice the merge distance roll toward a freshly merged piece, aimed to
     /// stop just inside merge range. Anything in the way still blocks them physically.
     private func callFriends(of node: NogginNode) {
         let mergeDistance = 2 * node.radius + tuning.gaps.gap(for: node.kind.tier)
-        for friend in pieces where friend !== node && friend.kind == node.kind && !friend.isMerging {
+        for friend in pieces where friend !== node && friend.kind == node.kind && !friend.isMerging && !friend.isAsleep {
             guard let body = friend.physicsBody else { continue }
             let offset = node.position - friend.position
             let distance = offset.length
@@ -509,9 +641,10 @@ final class GameScene: SKScene {
         let cameraReturning = dramaActive || cameraNode.xScale < 0.999
         endDrama(animated: true)
         model.throwEnded()
+        putBoredDogsToSleep()
         let fouled = pieces.filter { $0.position.y < foulY && !$0.isMerging }
-        model.chain = 0
         var gameEnds = false
+        setWind(.zero)
         if !fouled.isEmpty {
             for node in fouled {
                 node.isMerging = true
@@ -535,10 +668,164 @@ final class GameScene: SKScene {
             #if DEBUG
             if autoplay { after(1.5) { [weak self] in print("[game] over"); self?.startRound() } }
             #endif
+        } else if whistleTurn, loaded != nil {
+            // A Whistle call is over: back to aiming with the same Noggin.
+            whistleTurn = false
+            phase = .aiming
         } else {
+            whistleTurn = false
             phase = .resolving
-            after(fouled.isEmpty && !cameraReturning ? 0.05 : 0.5) { [weak self] in self?.loadNext() }
+            let strayArrives = maybeSendStray()
+            after(fouled.isEmpty && !cameraReturning && !strayArrives ? 0.05 : 0.6) { [weak self] in self?.loadNext() }
         }
+        model.lonelyBreeds = lonelyBreeds()
+    }
+
+    /// A Noggin that hasn't merged in `boredTurns` turns falls asleep: heavy, unmergeable, in the
+    /// way, until a hard hit wakes it.
+    private func putBoredDogsToSleep() {
+        let limit = Int(tuning.boredTurns)
+        for node in pieces where !node.isMerging && !node.kind.isVisitor && !node.isAsleep && node.physicsBody != nil {
+            node.idleTurns += 1
+            guard limit > 0, node.idleTurns >= limit else { continue }
+            node.fallAsleep()
+            #if DEBUG
+            if autoplay { print("[event] asleep") }
+            #endif
+            Effects.floatingText("Zzz…", at: node.position + CGVector(dx: 0, dy: node.radius + 14), color: .white, size: 16, in: fxLayer)
+        }
+    }
+
+    /// Every few throws (sooner as the score grows) a stray Pup trots onto the lawn by itself.
+    /// Returns whether one is on its way.
+    private func maybeSendStray() -> Bool {
+        throwsSinceStray += 1
+        let interval = Pressure.strayInterval(score: model.score, base: tuning.strayEvery)
+        guard interval > 0, throwsSinceStray >= interval else { return false }
+        throwsSinceStray = 0
+        let kind = NogginKind(breed: model.availableBreeds.randomElement() ?? .stray, tier: .pup)
+        #if DEBUG
+        if autoplay { print("[event] stray") }
+        #endif
+        guard let spot = openSpot(radius: kind.radius) else { return false }
+        let node = NogginNode(kind: kind)
+        let fromLeft = Bool.random()
+        node.position = CGPoint(x: fromLeft ? lawnRect.minX - 40 : lawnRect.maxX + 40, y: spot.y)
+        add(node)
+        let trot = SKAction.move(to: spot, duration: 0.6)
+        trot.timingMode = .easeOut
+        let bob = SKAction.repeat(.sequence([.moveBy(x: 0, y: 5, duration: 0.075), .moveBy(x: 0, y: -5, duration: 0.075)]), count: 4)
+        node.run(.group([trot, bob]))
+        Effects.floatingText("A stray wanders in!", at: CGPoint(x: spot.x, y: spot.y + 40), color: .white, size: 18, in: fxLayer)
+        sound.play(.bark, volume: 0.7, pitch: Float.random(in: 1.05...1.25))
+        after(0.6) { [weak self] in
+            guard let self, node.parent != nil else { return }
+            node.activatePhysics(velocity: .zero, spin: 0, bounce: self.tuning.nogginBounce)
+            node.trail = Effects.grassTrail(in: self.shadowLayer)
+            self.pieces.append(node)
+        }
+        return true
+    }
+
+    /// A free spot between the foul line and the top of the lawn, clear of other pieces and rocks.
+    private func openSpot(radius: CGFloat) -> CGPoint? {
+        for _ in 0..<30 {
+            let point = CGPoint(x: .random(in: (lawnRect.minX + radius + 10)...(lawnRect.maxX - radius - 10)),
+                                y: .random(in: (foulY + radius + 50)...(upperY - radius - 20)))
+            let clear = pieces.allSatisfy { $0.position.distance(to: point) > $0.radius + radius + 12 }
+                && features.rocks.allSatisfy { $0.center.distance(to: point) > $0.radius + radius + 12 }
+            if clear { return point }
+        }
+        return nil
+    }
+
+    /// From the sixth throw, some turns bring a gust: the wind arrow and leaves show it, and it
+    /// pushes every moving Noggin (and the aim line) for the whole turn.
+    private func rollGust() {
+        guard model.throwsMade >= 5, CGFloat.random(in: 0..<1) < tuning.gustChance else { return }
+        let angle = (Bool.random() ? 0 : CGFloat.pi) + .random(in: -0.5...0.5)
+        let strength = tuning.gustStrength * .random(in: 0.6...1.3)
+        setWind(CGVector(dx: cos(angle) * strength, dy: sin(angle) * strength))
+        #if DEBUG
+        if autoplay { print("[event] gust") }
+        #endif
+        sound.play(.whoosh, volume: 0.7)
+    }
+
+    private func setWind(_ wind: CGVector) {
+        baseFeatures.wind = wind
+        features.wind = wind
+        if wind == .zero {
+            windIndicator?.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
+            windIndicator = nil
+            windLeaves?.particleBirthRate = 0
+            return
+        }
+        if windIndicator == nil {
+            let indicator = Effects.windIndicator()
+            indicator.position = CGPoint(x: lawnRect.midX, y: upperY - 34)
+            indicator.zPosition = 4
+            indicator.alpha = 0
+            indicator.run(.fadeIn(withDuration: 0.3))
+            aimLayer.addChild(indicator)
+            windIndicator = indicator
+        }
+        let angle = atan2(wind.dy, wind.dx)
+        if let arrow = windIndicator?.childNode(withName: "arrow") {
+            arrow.zRotation = angle
+            arrow.setScale(0.7 + wind.length / 200)
+            arrow.run(.repeatForever(.sequence([.moveBy(x: cos(angle) * 6, y: sin(angle) * 6, duration: 0.4),
+                                                .moveBy(x: -cos(angle) * 6, y: -sin(angle) * 6, duration: 0.4)])), withKey: "sway")
+        }
+        if windLeaves == nil { windLeaves = Effects.windLeaves(across: lawnRect, in: fxLayer) }
+        windLeaves?.emissionAngle = angle
+        windLeaves?.particleSpeed = wind.length * 0.9
+        windLeaves?.particleSpeedRange = wind.length * 0.3
+        windLeaves?.particleBirthRate = 4 + wind.length / 30
+    }
+
+    /// A squirrel dashes across the upper lawn; dogs near its path chase it a short way.
+    private func squirrelDash() {
+        guard phase == .aiming, dragStart == nil, !squirrelRunning else { return }
+        squirrelRunning = true
+        #if DEBUG
+        if autoplay { print("[event] squirrel") }
+        #endif
+        let y = CGFloat.random(in: (foulY + 90)...(upperY - 40))
+        let leftToRight = Bool.random()
+        let start = CGPoint(x: leftToRight ? lawnRect.minX - 40 : lawnRect.maxX + 40, y: y)
+        let end = CGPoint(x: leftToRight ? lawnRect.maxX + 40 : lawnRect.minX - 40, y: y)
+        let squirrel = Effects.squirrel()
+        squirrel.position = start
+        squirrel.xScale = leftToRight ? 1 : -1
+        squirrel.zPosition = 4
+        aimLayer.addChild(squirrel)
+        let duration: TimeInterval = 1.3
+        let hop = SKAction.repeat(.sequence([.moveBy(x: 0, y: 8, duration: 0.08), .moveBy(x: 0, y: -8, duration: 0.08)]), count: 8)
+        squirrel.run(.sequence([.group([.move(to: end, duration: duration), hop]), .removeFromParent()]))
+        sound.play(.squeak)
+
+        let direction = CGVector(dx: leftToRight ? 1 : -1, dy: 0)
+        for node in pieces where !node.isMerging && !node.kind.isVisitor && !node.isAsleep && node.physicsBody != nil {
+            guard abs(node.position.y - y) < 110 else { continue }
+            // Each dog bolts as the squirrel passes it.
+            let progress = (node.position.x - start.x) / (end.x - start.x)
+            after(duration * TimeInterval(min(max(progress, 0), 1))) { [weak self] in
+                guard let self, let body = node.physicsBody, !node.isMerging else { return }
+                let towardPath = CGVector(dx: 0, dy: (y - node.position.y) * 0.8)
+                body.velocity += direction * .random(in: 180...300) + towardPath
+                node.react(.happy, for: 0.7)
+                if Bool.random() { self.sound.play(.bark, volume: 0.5, pitch: .random(in: 0.95...1.25)) }
+            }
+        }
+        after(duration + 0.1) { [weak self] in self?.squirrelRunning = false }
+    }
+
+    /// Breeds with a Pup on the lawn that has no partner of its kind anywhere.
+    private func lonelyBreeds() -> [Breed] {
+        let pups = pieces.filter { !$0.isMerging && !$0.isAsleep && $0.kind.special == nil && $0.kind.tier == .pup }
+        let counts = Dictionary(grouping: pups, by: \.kind.breed).mapValues(\.count)
+        return counts.filter { $0.value == 1 }.map(\.key)
     }
 
     // MARK: - Frame loop
@@ -563,8 +850,9 @@ final class GameScene: SKScene {
             var velocity = body.velocity
             var spin = body.angularVelocity
             let surface = features.surface(at: node.position)
+            let push = node.kind.isVisitor ? .zero : features.push(at: node.position)
             for _ in 0..<steps {
-                rolling.step(velocity: &velocity, spin: &spin, dt: rollingStep, surface: surface)
+                rolling.step(velocity: &velocity, spin: &spin, dt: rollingStep, surface: surface, push: push)
             }
             body.velocity = velocity
             body.angularVelocity = spin
@@ -585,13 +873,32 @@ final class GameScene: SKScene {
             remove(node)
         }
 
-        if phase == .rolling {
-            // Slow pieces merge as soon as they meet, while the rest of the lawn keeps moving.
+        if let node = thrown, node.isMystery, let body = node.physicsBody, body.velocity.length < 160 {
+            revealMystery(node)
+        }
+        if let deadline = model.chainDeadline, Date() > deadline {
+            model.chain = 0
+            model.chainDeadline = nil
+        }
+        updateShakeOffs()
+
+        if phase == .rolling || phase == .aiming {
+            // Matching pieces that bump merge at once; slow pieces merge as soon as they meet. This
+            // also runs while aiming, so idle scoots can complete merges.
+            if !pendingContacts.isEmpty {
+                let touching = pendingContacts
+                pendingContacts.removeAll()
+                mergeCheck(maxSpeed: tuning.mergeSpeed, touching: touching)
+            }
             sinceMergeCheck += dt
             if sinceMergeCheck >= mergeCheckInterval {
                 sinceMergeCheck = 0
                 mergeCheck(maxSpeed: tuning.mergeSpeed)
             }
+        }
+        if phase == .aiming { updateScoots(dt: dt) }
+
+        if phase == .rolling {
             // The turn ends only when nothing moves, no merge is animating, and a full check finds nothing.
             if activeMerges == 0, isLawnStill() {
                 stillTime += dt
@@ -605,6 +912,101 @@ final class GameScene: SKScene {
         }
     }
 
+    private func revealMystery(_ node: NogginNode) {
+        guard node.isMystery else { return }
+        node.revealMystery()
+        #if DEBUG
+        if autoplay { print("[event] mystery") }
+        #endif
+        Effects.floatingText("It's a \(node.kind.breed.displayName)!", at: node.position + CGVector(dx: 0, dy: node.radius + 18),
+                             color: .white, size: 18, in: fxLayer)
+        Effects.dust(at: node.position, intensity: 0.5, color: .white, in: fxLayer)
+    }
+
+    /// A Noggin that crossed a puddle shakes itself dry when it comes to rest, nudging nearby
+    /// pieces toward their matches.
+    private func updateShakeOffs() {
+        for node in pieces where node.isWet && !node.isMerging {
+            guard let body = node.physicsBody, body.velocity.length < 15 else { continue }
+            node.isWet = false
+            node.react(.happy, for: 0.6)
+            let shake = SKAction.sequence([.rotate(byAngle: 0.25, duration: 0.05), .rotate(byAngle: -0.5, duration: 0.08),
+                                           .rotate(byAngle: 0.4, duration: 0.07), .rotate(byAngle: -0.15, duration: 0.05)])
+            node.art.run(shake, withKey: "wobble")
+            Effects.droplets(at: node.position, radius: node.radius, in: fxLayer)
+            sound.play(.splash, volume: 0.6, pitch: 1.3)
+            shockwave(at: node.position, reach: tuning.shakeReach, strength: 0, sparing: nil,
+                      steerOnly: true, excluding: node, showRing: false)
+            stillTime = 0
+        }
+    }
+
+    /// While aiming, now and then an idle Noggin scoots: toward a match just out of reach (which can
+    /// merge it right there), or a little shuffle on its own.
+    private func updateScoots(dt: TimeInterval) {
+        guard tuning.scootInterval > 0, activeMerges == 0, dragStart == nil else { return }
+        sinceScoot += dt
+        guard sinceScoot >= nextScoot else { return }
+        sinceScoot = 0
+        nextScoot = TimeInterval(tuning.scootInterval) * .random(in: 0.7...1.3)
+
+        let idle = pieces.filter { node in
+            guard !node.isMerging, !node.kind.isVisitor, !node.isAsleep, let body = node.physicsBody else { return false }
+            return body.velocity.length < rolling.restSpeed && node.position.y > foulY + node.radius + 20
+        }
+        var best: (mover: NogginNode, partner: NogginNode, gap: CGFloat)?
+        for (i, a) in idle.enumerated() {
+            for b in idle.dropFirst(i + 1) where Self.couldMerge(a.kind, b.kind) {
+                let reach = min(tuning.gaps.gap(for: a.kind.tier), tuning.gaps.gap(for: b.kind.tier))
+                let gap = a.position.distance(to: b.position) - a.radius - b.radius
+                guard gap > reach, gap <= reach + tuning.magnetRange else { continue }
+                if best == nil || gap < best!.gap {
+                    // The one farther from the foul line moves, so nobody scoots into it.
+                    best = a.position.y > b.position.y ? (a, b, gap) : (b, a, gap)
+                }
+            }
+        }
+        if let best {
+            let reach = tuning.gaps.gap(for: best.mover.kind.tier)
+            scoot(best.mover, toward: best.partner.position, distance: best.gap - reach * 0.4)
+            best.mover.react(.happy, for: 0.6)
+            sound.play(.tick, volume: 0.35, pitch: 1.6)
+        } else if let wanderer = idle.randomElement(), Bool.random() {
+            // A small sniff around, drifting toward the middle of the lawn rather than the foul line.
+            let center = features.bowl?.center ?? CGPoint(x: lawnRect.midX, y: lawnRect.midY)
+            let direction = ((center - wanderer.position).normalized + CGVector(dx: .random(in: -1...1), dy: .random(in: -0.6...1))).normalized
+            scoot(wanderer, toward: wanderer.position + direction * 40, distance: .random(in: 8...20))
+        }
+    }
+
+    private func scoot(_ node: NogginNode, toward target: CGPoint, distance: CGFloat) {
+        guard let body = node.physicsBody, distance > 1 else { return }
+        let friction = rolling.friction * features.surface(at: node.position).friction
+        body.velocity = (target - node.position).normalized * (sqrt(2 * friction * distance) * 1.08)
+        node.squish(0.25)
+    }
+
+    /// Spends a Whistle: every Noggin within reach of `point` runs to it. The lawn then settles
+    /// like a turn, but the loaded Noggin stays in the slingshot.
+    private func blowWhistle(at point: CGPoint) {
+        model.useWhistle()
+        sound.play(.whistle)
+        Effects.shockRing(at: point, radius: 60, in: fxLayer)
+        Effects.shockRing(at: point, radius: 140, in: fxLayer)
+        Effects.floatingText("Here, pups!", at: point + CGVector(dx: 0, dy: 40), color: .white, size: 22, in: fxLayer)
+        heavyHaptic.impactOccurred(intensity: 0.6)
+        for node in pieces where !node.isMerging && !node.kind.isVisitor {
+            guard node.physicsBody != nil else { continue }
+            let distance = node.position.distance(to: point)
+            guard distance < 240 else { continue }
+            scoot(node, toward: point, distance: max(0, distance - node.radius - 12))
+            node.react(.happy, for: 0.8)
+        }
+        whistleTurn = true
+        stillTime = 0
+        phase = .rolling
+    }
+
     /// Pushes tuning-panel changes into bodies that already exist.
     private func applyTuning() {
         appliedTuning = tuning
@@ -615,7 +1017,7 @@ final class GameScene: SKScene {
         for node in pieces where node.kind.special != .bulldog {
             node.physicsBody?.restitution = tuning.nogginBounce
         }
-        features = baseFeatures.with(sand: tuning.sand, puddle: tuning.puddle)
+        features = baseFeatures.with(sand: tuning.sand, puddle: tuning.puddle, bowlStrength: tuning.bowl)
     }
 
     /// Grass flecks behind fast rolls, and skid marks where a Noggin curves hard.
@@ -630,11 +1032,12 @@ final class GameScene: SKScene {
             let speed = velocity.length
             trail.position = node.position + velocity.normalized * -node.radius * 0.8
             trail.emissionAngle = atan2(-velocity.dy, -velocity.dx)
-            let surface = features.surface(at: node.position)
-            trail.particleBirthRate = speed > 220 && surface != .puddle ? min(90, (speed - 220) * 0.12) : 0
+            let ground = features.ground(at: node.position)
+            trail.particleBirthRate = speed > 220 && ground != .puddle ? min(90, (speed - 220) * 0.12) : 0
             trail.particleSpeed = 40 + speed * 0.08
-            trail.particleColor = surface == .sand ? UIColor(hex: 0xD9B86A) : UIColor(hex: 0x3E8E3C)
-            if surface == .puddle, speed > 40, clock - node.lastSkid > 0.14 {
+            trail.particleColor = ground == .sand ? UIColor(hex: 0xD9B86A) : UIColor(hex: 0x3E8E3C)
+            if ground == .puddle, speed > rolling.restSpeed { node.isWet = true }
+            if ground == .puddle, speed > 40, clock - node.lastSkid > 0.14 {
                 node.lastSkid = clock
                 Effects.ripple(at: node.position, radius: node.radius, in: marksLayer)
                 if speed > 160 { sound.play(.splash, volume: Float(min(1, speed / 600)), pitch: Float.random(in: 0.9...1.15)) }
@@ -649,7 +1052,7 @@ final class GameScene: SKScene {
 
     /// Resting Noggins look happy while a match of theirs is close by.
     private func updateMoods() {
-        let resting = pieces.filter { !$0.isMerging && $0.physicsBody != nil && !$0.kind.isVisitor }
+        let resting = pieces.filter { !$0.isMerging && $0.physicsBody != nil && !$0.kind.isVisitor && !$0.isAsleep }
         for node in resting {
             let reach = (2 * node.radius + tuning.gaps.gap(for: node.kind.tier)) * 1.8
             let friendNearby = resting.contains { other in
@@ -672,12 +1075,13 @@ final class GameScene: SKScene {
     private func updateHints() {
         var pairs: [(CGPoint, CGPoint, CGFloat)] = []
         if phase == .aiming {
-            let resting = pieces.filter { !$0.isMerging && $0.physicsBody != nil && !$0.kind.isVisitor }
+            let resting = pieces.filter { !$0.isMerging && $0.physicsBody != nil && !$0.kind.isVisitor && !$0.isAsleep }
             for (i, a) in resting.enumerated() {
                 for b in resting.dropFirst(i + 1) where Self.couldMerge(a.kind, b.kind) {
                     let offset = b.position - a.position
                     let gap = offset.length - a.radius - b.radius
-                    let mergeGap = min(tuning.gaps.gap(for: a.kind.tier), tuning.gaps.gap(for: b.kind.tier))
+                    let sandBonus = features.isSand(at: a.position) || features.isSand(at: b.position) ? tuning.sandGapBonus : 0
+                    let mergeGap = min(tuning.gaps.gap(for: a.kind.tier), tuning.gaps.gap(for: b.kind.tier)) + sandBonus
                     guard gap > mergeGap, gap <= mergeGap + 55 else { continue }
                     let direction = offset.normalized
                     pairs.append((a.position + direction * a.radius, b.position + direction * -b.radius, gap))
@@ -823,6 +1227,11 @@ final class GameScene: SKScene {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard phase == .aiming, loaded != nil, dragStart == nil, let touch = touches.first else { return }
+        let location = touch.location(in: self)
+        if model.isWhistleArmed, model.whistles > 0, location.y > foulY + 30, lawnRect.contains(location) {
+            blowWhistle(at: location)
+            return
+        }
         dragStart = touch.location(in: self)
         dragPath = [.zero]
         slingshot.beginHold()
@@ -911,15 +1320,14 @@ final class GameScene: SKScene {
         aimRing.isHidden = false
         aimRing.position = end
         aimRing.setScale(loaded.radius)
-        aimRing.strokeColor = completesGroup(loaded.kind, at: end) ? UIColor(hex: 0xFFC93C) : .white
+        aimRing.strokeColor = !loaded.isMystery && completesGroup(loaded.kind, at: end) ? UIColor(hex: 0xFFC93C) : .white
     }
 
     private func completesGroup(_ kind: NogginKind, at point: CGPoint) -> Bool {
-        var probe = pieces.filter { $0.physicsBody != nil }.enumerated().map {
-            MergePiece(id: $0.offset, kind: $0.element.kind, position: $0.element.position)
-        }
+        var probe = pieces.filter { $0.physicsBody != nil && !$0.isAsleep }.enumerated().map { mergePiece($0.offset, $0.element) }
         let probeID = probe.count
-        probe.append(MergePiece(id: probeID, kind: kind, position: point))
+        probe.append(MergePiece(id: probeID, kind: kind, position: point,
+                                gapBonus: features.isSand(at: point) ? tuning.sandGapBonus : 0))
         return MergeEngine.groups(in: probe, gaps: tuning.gaps).contains { $0.ids.contains(probeID) }
     }
 
@@ -950,21 +1358,22 @@ final class GameScene: SKScene {
             y += stripe
             even.toggle()
         }
-        let launchZone = SKSpriteNode(color: UIColor(white: 0, alpha: 0.08),
-                                      size: CGSize(width: lawnRect.width, height: foulY - lawnRect.minY))
+        launchZone.size = CGSize(width: lawnRect.width, height: foulY - lawnRect.minY)
         launchZone.anchorPoint = .zero
         launchZone.position = CGPoint(x: lawnRect.minX, y: lawnRect.minY)
         crop.addChild(launchZone)
         addChild(crop)
 
         let foulPath = CGMutablePath()
-        foulPath.move(to: CGPoint(x: lawnRect.minX + 6, y: foulY))
-        foulPath.addLine(to: CGPoint(x: lawnRect.maxX - 6, y: foulY))
-        let foulLine = SKShapeNode(path: foulPath.copy(dashingWithPhase: 0, lengths: [12, 10]))
+        foulPath.move(to: CGPoint(x: lawnRect.minX + 6, y: 0))
+        foulPath.addLine(to: CGPoint(x: lawnRect.maxX - 6, y: 0))
+        foulLine.path = foulPath.copy(dashingWithPhase: 0, lengths: [12, 10])
+        foulLine.position = CGPoint(x: 0, y: foulY)
         foulLine.strokeColor = UIColor(white: 1, alpha: 0.7)
         foulLine.lineWidth = 3
         foulLine.zPosition = 0.5
         addChild(foulLine)
+
 
         let hedgeRect = lawnRect.insetBy(dx: -5, dy: -5)
         let hedge = SKShapeNode(path: CGPath(roundedRect: hedgeRect, cornerWidth: corner + 5, cornerHeight: corner + 5, transform: nil))
@@ -1006,11 +1415,25 @@ extension GameScene: @preconcurrency SKPhysicsContactDelegate {
     func didBegin(_ contact: SKPhysicsContact) {
         let a = contact.bodyA.node as? NogginNode
         let b = contact.bodyB.node as? NogginNode
+        // Matching Noggins that bump merge on the next frame (bodies can't change mid-contact).
+        for node in [a, b].compactMap({ $0 }) where node.isMystery { revealMystery(node) }
+        if let a, let b, !a.isMerging, !b.isMerging, !a.isAsleep, !b.isAsleep, Self.couldMerge(a.kind, b.kind) {
+            pendingContacts.insert(ObjectIdentifier(a))
+            pendingContacts.insert(ObjectIdentifier(b))
+        }
         let relative = (a?.lastVelocity ?? .zero) - (b?.lastVelocity ?? .zero)
         let closing = abs(relative.dot(contact.contactNormal))
         guard closing > 40 else { return }
         let intensity = min(1, closing / 700)
         for node in [a, b].compactMap({ $0 }) where !node.isMerging {
+            if node.isAsleep {
+                // Only a solid knock wakes a sleeper.
+                if intensity > 0.5 {
+                    node.wakeUp()
+                    Effects.floatingText("Awake!", at: node.position + CGVector(dx: 0, dy: node.radius + 14), color: .white, size: 16, in: fxLayer)
+                }
+                continue
+            }
             node.squish(intensity)
             // Big hits leave them dizzy; solid ones make them wince.
             if intensity > 0.8 {

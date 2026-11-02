@@ -34,6 +34,7 @@ struct GameView: View {
             .padding(.horizontal, 16)
             .padding(.top, 4)
             .animation(.spring(duration: 0.35, bounce: 0.5), value: model.isLastChance)
+            WhistleControl(model: model)
             if let announcing {
                 NewBreedBanner(breed: announcing.breed)
                     .id(announcing.id)
@@ -243,5 +244,57 @@ private struct NewBreedBanner: View {
         .rotationEffect(.degrees(2))
         .offset(y: -120)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The Whistle button over the launch zone, left of the slingshot. Tap to arm, then tap the lawn.
+private struct WhistleControl: View {
+    @Bindable var model: GameModel
+
+    var body: some View {
+        VStack {
+            Spacer()
+            HStack(alignment: .bottom) {
+                if model.whistles > 0 || model.isWhistleArmed {
+                    Button {
+                        model.isWhistleArmed.toggle()
+                    } label: {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "dog.fill")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(Color.ink)
+                                .frame(width: 56, height: 56)
+                                .background(model.isWhistleArmed ? Color.tangerine : .white, in: Circle())
+                                .overlay(Circle().stroke(Color.ink, lineWidth: 3))
+                            Text("\(model.whistles)")
+                                .font(.rounded(13))
+                                .foregroundStyle(.white)
+                                .frame(width: 22, height: 22)
+                                .background(Color.ink, in: Circle())
+                                .offset(x: 4, y: -4)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Whistle, \(model.whistles) left")
+                    .accessibilityHint(model.isWhistleArmed ? "Armed. Tap the lawn to call the dogs." : "Arms the whistle")
+                    .transition(.scale.combined(with: .opacity))
+                    if model.isWhistleArmed {
+                        Text("Tap the lawn to call the dogs")
+                            .font(.rounded(13, .bold))
+                            .foregroundStyle(Color.ink)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.white, in: Capsule())
+                            .overlay(Capsule().stroke(Color.ink, lineWidth: 2))
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+                    }
+                }
+                Spacer()
+            }
+            .padding(.leading, 26)
+            .padding(.bottom, 34)
+        }
+        .animation(.spring(duration: 0.3, bounce: 0.4), value: model.whistles)
+        .animation(.spring(duration: 0.3), value: model.isWhistleArmed)
     }
 }

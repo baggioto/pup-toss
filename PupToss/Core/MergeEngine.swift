@@ -4,6 +4,8 @@ nonisolated struct MergePiece: Sendable {
     var id: Int
     var kind: NogginKind
     var position: CGPoint
+    /// Extra merge reach, e.g. for a piece sitting in a sand dig spot.
+    var gapBonus: CGFloat = 0
 }
 
 nonisolated struct MergeGroup: Equatable, Sendable {
@@ -38,7 +40,7 @@ nonisolated enum MergeEngine {
         }
 
         func near(_ a: MergePiece, _ b: MergePiece, gap: CGFloat) -> Bool {
-            a.position.distance(to: b.position) <= a.kind.radius + b.kind.radius + gap
+            a.position.distance(to: b.position) <= a.kind.radius + b.kind.radius + gap + max(a.gapBonus, b.gapBonus)
         }
 
         let normals = pieces.indices.filter { pieces[$0].kind.special == nil }
@@ -99,10 +101,17 @@ nonisolated enum Scoring {
         }
     }
 
-    /// Each piece beyond the required two adds 50%; the chain step within one throw multiplies.
-    static func points(for group: MergeGroup, chain: Int) -> Int {
+    /// Each piece beyond the required two adds 50%; the chain step multiplies by
+    /// `chainMultiplier`, so long chains pay far more than single merges.
+    static func points(for group: MergeGroup, chain: Int, bonus: Double = 1) -> Int {
         let base = group.kind.tier.next.map(mergePoints(into:)) ?? 0
         let extra = Double(max(0, group.ids.count - MergeEngine.requiredCount)) * 0.5
-        return Int((Double(base) * (1 + extra)).rounded()) * max(1, chain)
+        return Int((Double(base) * (1 + extra) * bonus).rounded()) * chainMultiplier(chain)
+    }
+
+    /// ×1, ×2, ×4, ×7, ×11…: each chain step adds one more than the last.
+    static func chainMultiplier(_ chain: Int) -> Int {
+        let n = max(1, chain)
+        return 1 + n * (n - 1) / 2
     }
 }

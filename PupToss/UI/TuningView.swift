@@ -33,6 +33,26 @@ struct TuningView: View {
                     slider("Bulldog weight", \.bulldogWeight, 1...10, step: 0.5, unit: "×")
                     slider("Sand friction", \.sandFriction, 1...5, step: 0.1, unit: "×")
                     slider("Puddle friction", \.puddleFriction, 0.05...1, step: 0.05, unit: "×")
+                    slider("Sand merge reach", \.sandGapBonus, 0...60, step: 1, unit: "pt")
+                    slider("Sand score", \.sandScore, 1...4, step: 0.5, unit: "×")
+                    slider("Shake-off reach", \.shakeReach, 0...250, step: 10, unit: "pt")
+                    slider("Bowl pull", \.bowl, 0...250, step: 5, unit: "pt/s²")
+                }
+                Section("Chains and a lively lawn") {
+                    slider("Merge momentum", \.momentum, 0...1.2, step: 0.05, unit: "×")
+                    slider("Matchmaker shockwave", \.matchmaker, 0...1, step: 0.05)
+                    slider("Chain window", \.chainWindow, 0.3...4, step: 0.1, unit: "s")
+                    slider("Idle scoot every", \.scootInterval, 0...5, step: 0.1, unit: "s")
+                    slider("Scoot reach", \.magnetRange, 0...200, step: 5, unit: "pt")
+                    slider("Asleep after", \.boredTurns, 0...40, step: 1, unit: "turns")
+                    slider("Lonely-breed lean", \.queueBias, 0...1, step: 0.05)
+                }
+                Section("Pressure") {
+                    slider("Stray every", \.strayEvery, 0...12, step: 1, unit: "throws")
+                    slider("Gust chance", \.gustChance, 0...1, step: 0.05)
+                    slider("Gust strength", \.gustStrength, 0...300, step: 10, unit: "pt/s²")
+                    slider("Squirrel chance", \.squirrelChance, 0...0.5, step: 0.02)
+                    slider("Mystery Pup chance", \.mysteryChance, 0...0.6, step: 0.02)
                 }
                 Section {
                     Button(copied ? "Copied" : "Copy values") { copy() }

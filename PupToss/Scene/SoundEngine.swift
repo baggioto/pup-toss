@@ -5,7 +5,7 @@ import AVFoundation
 /// Uses the ambient audio session: it respects the silent switch and mixes with the player's music.
 final class SoundEngine {
     enum Sound: CaseIterable {
-        case bonk, thud, snap, tick, pop, fanfare, bark, chomp, splash, foul, goal, unlock
+        case bonk, thud, snap, tick, pop, fanfare, bark, chomp, splash, foul, goal, unlock, whistle, whoosh, squeak
     }
 
     static let shared = SoundEngine()
@@ -156,6 +156,29 @@ final class SoundEngine {
                                   glide(0.26, from: 230, to: 150, decay: 0.15, harmonics: 0.5)), peak: 0.6)
         case .goal:
             return normalize(then(glide(0.11, from: 880, to: 880, decay: 0.12), glide(0.28, from: 1320, to: 1320, decay: 0.16)), peak: 0.6)
+        case .whoosh:
+            var last: Float = 0
+            let gust = (0..<Int(0.7 * rate)).map { i -> Float in
+                let t = Float(i) / rate
+                last = 0.94 * last + 0.06 * noise.next()
+                return last * sin(.pi * t / 0.7) * 6
+            }
+            return normalize(gust, peak: 0.5)
+        case .squeak:
+            let chirp = glide(0.05, from: 2600, to: 3400, decay: 0.03)
+            return normalize(then(chirp, silence(0.05), chirp, silence(0.05), chirp), peak: 0.45)
+        case .whistle:
+            // Two-tone "fweet-fweeo" with a little vibrato.
+            var phase: Float = 0
+            func blow(_ duration: Float, from: Float, to: Float) -> [Float] {
+                tone(duration) { t, _ in
+                    let f = from * pow(to / from, t / duration) * (1 + 0.012 * sin(2 * .pi * 28 * t))
+                    phase += 2 * .pi * f / rate
+                    let edge = min(1, t * 60) * min(1, (duration - t) * 40)
+                    return sin(phase) * edge
+                }
+            }
+            return normalize(then(blow(0.16, from: 1700, to: 2300), silence(0.04), blow(0.26, from: 2300, to: 1600)), peak: 0.55)
         case .unlock:
             return normalize(then(glide(0.08, from: 660, to: 660, decay: 0.07, harmonics: 0.2),
                                   glide(0.08, from: 880, to: 880, decay: 0.07, harmonics: 0.2),
