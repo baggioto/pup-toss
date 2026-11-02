@@ -12,6 +12,69 @@ enum Effects {
         UIBezierPath(rect: CGRect(x: 0, y: 0, width: 10, height: 6)).fill()
     })
 
+    /// A grass-fleck emitter that follows a rolling Noggin. The scene moves it, aims it behind the
+    /// roll and sets its birth rate from the speed; it starts off.
+    static func grassTrail(in layer: SKNode) -> SKEmitterNode {
+        let emitter = SKEmitterNode()
+        emitter.particleTexture = chip
+        emitter.particleBirthRate = 0
+        emitter.particleLifetime = 0.45
+        emitter.particleLifetimeRange = 0.2
+        emitter.particleSpeed = 70
+        emitter.particleSpeedRange = 40
+        emitter.emissionAngleRange = 0.9
+        emitter.particleScale = 0.55
+        emitter.particleScaleRange = 0.25
+        emitter.particleScaleSpeed = -0.6
+        emitter.particleRotationRange = .pi * 2
+        emitter.particleRotationSpeed = 5
+        emitter.particleAlpha = 0.9
+        emitter.particleAlphaSpeed = -1.6
+        emitter.particleColor = UIColor(hex: 0x3E8E3C)
+        emitter.particleColorBlendFactor = 1
+        emitter.particleColorRedRange = 0.1
+        emitter.particleColorGreenRange = 0.2
+        emitter.targetNode = layer
+        layer.addChild(emitter)
+        return emitter
+    }
+
+    /// A faint scuff on the grass that fades away, left by a hard-curving Noggin.
+    static func skidMark(at point: CGPoint, radius: CGFloat, in layer: SKNode) {
+        let mark = SKSpriteNode(texture: dot)
+        mark.color = UIColor(hex: 0x2F6B33)
+        mark.colorBlendFactor = 1
+        mark.alpha = 0.35
+        mark.size = CGSize(width: radius * 0.55, height: radius * 0.55)
+        mark.position = point
+        mark.run(.sequence([.wait(forDuration: 0.5), .fadeOut(withDuration: 1.2), .removeFromParent()]))
+        layer.addChild(mark)
+    }
+
+    /// Twinkles around a Top Dog's crown. Attach to the Noggin so they move with it.
+    static func crownSparkles(radius: CGFloat) -> SKEmitterNode {
+        let emitter = SKEmitterNode()
+        emitter.particleTexture = dot
+        emitter.particleBirthRate = 28
+        emitter.particleLifetime = 0.55
+        emitter.particleLifetimeRange = 0.2
+        emitter.particlePositionRange = CGVector(dx: radius * 1.1, dy: radius * 0.35)
+        emitter.particleSpeed = 22
+        emitter.particleSpeedRange = 12
+        emitter.emissionAngle = .pi / 2
+        emitter.emissionAngleRange = .pi
+        emitter.particleScale = 0.28
+        emitter.particleScaleRange = 0.15
+        emitter.particleScaleSpeed = -0.4
+        emitter.particleAlphaSpeed = -1.6
+        emitter.particleColor = UIColor(hex: 0xFFF3B0)
+        emitter.particleColorBlendFactor = 1
+        emitter.particleBlendMode = .add
+        emitter.position = CGPoint(x: 0, y: radius * 1.15)
+        emitter.zPosition = 1
+        return emitter
+    }
+
     static func dust(at point: CGPoint, intensity: CGFloat, color: UIColor, in layer: SKNode) {
         let emitter = burst(texture: dot, count: 4 + Int(8 * intensity), at: point)
         emitter.particleLifetime = 0.4

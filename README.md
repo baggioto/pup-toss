@@ -19,6 +19,13 @@ The app opens on a home screen with your personal best in the corner. **Play** s
 - **Turn end:** a turn ends only when nothing moves, no merge is animating, and a final check finds nothing left to merge.
 - **Fouls:** a Noggin resting behind the dashed foul line at the end of a turn is removed and counts as a foul. 3 fouls ends the game.
 
+### Feel
+
+- **Faces:** Noggins blink, wince on solid hits, go dizzy after big ones, grin when a match is close by, and look nervous when the band is pulled tight.
+- **Haptics (Core Haptics):** a rumble that builds as you pull the band, a sharp snap on release, and thuds scaled to impact strength (duller against the hedge). Devices without Core Haptics get simple taps.
+- **Particles:** grass flecks behind fast rolls, skid marks on hard curves, dust on impacts, confetti on merges, and sparkles on a celebrating Top Dog's crown.
+- **Home screen:** tap a Noggin and it hops, grins and barks.
+
 ### Breeds
 
 Shiba, Pug, Dalmatian, Husky, Stray (a black street dog with flopped-over ear tips, a grey muzzle and a white bib; it's also the app icon) and Iggy (a black-and-white Boston Terrier with huge yellow-lined bat ears, heavy-lidded blue eyes and a toothy grin). Every breed has identical physics; breed only matters for matching.
@@ -103,8 +110,9 @@ xcodebuild -project PupToss.xcodeproj -scheme PupToss \
 | `-debugChain` | 2 Pups that merge into a Good Boy next to another Good Boy |
 | `-debugChain -far` | Same, with the other Good Boy about 120 pt away |
 | `-debugHUD` | Starts with a 6-digit score and a ×4 chain, for checking the top bar |
-| `-exportIcon` | Renders the 1024 × 1024 app icon into the app's Documents folder |
+| `-exportIcon` | Renders the 1024 × 1024 app icon (light, dark and tinted) into the app's Documents folder |
 | `-exportSheet` | Renders every breed at every size into `Sheet.png` in the Documents folder, for reviewing art |
+| `-exportFaces` | Renders every breed in every expression into `Faces.png` |
 
 `-autoplay` and the `-debug…` options skip the home screen and start in the game.
 
@@ -114,11 +122,11 @@ The icon is drawn from the in-game art (a Stray Top Dog on the lawn), so regener
 
 ```sh
 xcrun simctl launch booted com.baggioto.PupToss -exportIcon
-cp "$(xcrun simctl get_app_container booted com.baggioto.PupToss data)/Documents/AppIcon.png" \
-  PupToss/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+DATA="$(xcrun simctl get_app_container booted com.baggioto.PupToss data)/Documents"
+cp "$DATA"/AppIcon*.png PupToss/Assets.xcassets/AppIcon.appiconset/
 ```
 
-The exporter writes an opaque PNG, as the App Store requires.
+It writes `AppIcon.png` (light), `AppIcon-Dark.png` and `AppIcon-Tinted.png` (greyscale) for the iOS 18+ home-screen appearances, all opaque, as the App Store requires.
 
 ## Roadmap
 

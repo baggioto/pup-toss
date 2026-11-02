@@ -72,7 +72,7 @@ private struct BestBadge: View {
     }
 }
 
-/// A gently bobbing group of Noggins, one of each breed and size.
+/// A gently bobbing group of Noggins. Tap one and it hops, grins and barks.
 private struct NogginCluster: View {
     private struct Member: Identifiable {
         let id: Int
@@ -82,28 +82,83 @@ private struct NogginCluster: View {
         let period: Double
     }
 
+    private struct Hop {
+        var lift: CGFloat = 0
+        var squash: CGFloat = 1
+    }
+
     private let members: [Member] = [
-        Member(id: 0, kind: NogginKind(breed: .husky, tier: .goodBoy), radius: 40, offset: CGSize(width: -112, height: -18), period: 1.7),
-        Member(id: 1, kind: NogginKind(breed: .pug, tier: .pup), radius: 30, offset: CGSize(width: 110, height: -6), period: 1.9),
-        Member(id: 2, kind: NogginKind(breed: .dalmatian, tier: .pup), radius: 26, offset: CGSize(width: -62, height: 78), period: 2.1),
-        Member(id: 3, kind: NogginKind(breed: .shiba, tier: .pup), radius: 24, offset: CGSize(width: 66, height: 84), period: 1.6),
-        Member(id: 4, kind: NogginKind(breed: .shiba, tier: .topDog), radius: 52, offset: CGSize(width: 0, height: -30), period: 2.4),
+        Member(id: 0, kind: NogginKind(breed: .husky, tier: .goodBoy), radius: 38, offset: CGSize(width: -116, height: -24), period: 1.7),
+        Member(id: 1, kind: NogginKind(breed: .iggy, tier: .pup), radius: 27, offset: CGSize(width: 118, height: -14), period: 1.9),
+        Member(id: 2, kind: NogginKind(breed: .dalmatian, tier: .pup), radius: 25, offset: CGSize(width: -70, height: 82), period: 2.1),
+        Member(id: 3, kind: NogginKind(breed: .shiba, tier: .pup), radius: 24, offset: CGSize(width: 74, height: 86), period: 1.6),
+        Member(id: 4, kind: NogginKind(breed: .stray, tier: .topDog), radius: 52, offset: CGSize(width: 0, height: -30), period: 2.4),
     ]
 
     @State private var bobbing = false
+    @State private var hops: [Int: Int] = [:]
+    @State private var barking: Int?
 
     var body: some View {
         ZStack {
             ForEach(members) { member in
-                Image(uiImage: NogginArt.image(for: member.kind, radius: member.radius))
-                    .shadow(color: .black.opacity(0.18), radius: 0, x: 3, y: 5)
-                    .offset(member.offset)
-                    .offset(y: bobbing ? -5 : 5)
-                    .animation(.easeInOut(duration: member.period).repeatForever(autoreverses: true), value: bobbing)
+                Button {
+                    bark(member)
+                } label: {
+                    Image(uiImage: NogginArt.image(for: member.kind, radius: member.radius,
+                                                   expression: barking == member.id ? .happy : .normal))
+                        .shadow(color: .black.opacity(0.18), radius: 0, x: 3, y: 5)
+                }
+                .buttonStyle(.plain)
+                .keyframeAnimator(initialValue: Hop(), trigger: hops[member.id, default: 0]) { content, hop in
+                    content
+                        .scaleEffect(x: hop.squash, y: 2 - hop.squash, anchor: .bottom)
+                        .offset(y: -hop.lift)
+                } keyframes: { _ in
+                    KeyframeTrack(\.squash) {
+                        CubicKeyframe(1.14, duration: 0.07)
+                        CubicKeyframe(0.92, duration: 0.12)
+                        SpringKeyframe(1, duration: 0.35, spring: .bouncy)
+                    }
+                    KeyframeTrack(\.lift) {
+                        CubicKeyframe(0, duration: 0.07)
+                        SpringKeyframe(34, duration: 0.18)
+                        SpringKeyframe(0, duration: 0.4, spring: .bouncy)
+                    }
+                }
+                .overlay(alignment: .top) {
+                    if barking == member.id {
+                        Text("Woof!")
+                            .font(.rounded(15))
+                            .foregroundStyle(Color.ink)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 3)
+                            .background(.white, in: Capsule())
+                            .overlay(Capsule().stroke(Color.ink, lineWidth: 2))
+                            .fixedSize()
+                            .offset(y: -30)
+                            .transition(.scale(scale: 0.3, anchor: .bottom).combined(with: .opacity))
+                    }
+                }
+                .offset(member.offset)
+                .offset(y: bobbing ? -5 : 5)
+                .animation(.easeInOut(duration: member.period).repeatForever(autoreverses: true), value: bobbing)
+                .accessibilityLabel("\(member.kind.breed.displayName). Tap to make it bark.")
             }
         }
-        .accessibilityHidden(true)
+        .sensoryFeedback(.impact(weight: .light), trigger: hops)
         .onAppear { bobbing = true }
+    }
+
+    private func bark(_ member: Member) {
+        hops[member.id, default: 0] += 1
+        withAnimation(.spring(duration: 0.25, bounce: 0.5)) { barking = member.id }
+        Task {
+            try? await Task.sleep(for: .seconds(0.8))
+            if barking == member.id {
+                withAnimation(.easeOut(duration: 0.2)) { barking = nil }
+            }
+        }
     }
 }
 

@@ -15,6 +15,8 @@ final class GameScene: SKScene {
     private let rollingStep: CGFloat = 1.0 / 120.0
 
     private let shadowLayer = SKNode()
+    /// Skid marks: above the lawn, under the shadows.
+    private let marksLayer = SKNode()
     private let pieceLayer = SKNode()
     private let aimLayer = SKNode()
     private let fxLayer = SKNode()
@@ -41,7 +43,8 @@ final class GameScene: SKScene {
     private var dragPath: [CGVector] = []
 
     private var lastHaptic: TimeInterval = 0
-    private let softHaptic = UIImpactFeedbackGenerator(style: .soft)
+    private let haptics = Haptics()
+    private var sinceMoodCheck: TimeInterval = 0
     private let heavyHaptic = UIImpactFeedbackGenerator(style: .heavy)
     private let notifyHaptic = UINotificationFeedbackGenerator()
 
@@ -63,12 +66,13 @@ final class GameScene: SKScene {
         physicsWorld.contactDelegate = self
         buildLawn()
 
+        marksLayer.zPosition = 0.8
         shadowLayer.zPosition = 1
         slingshot.zPosition = 2
         pieceLayer.zPosition = 3
         aimLayer.zPosition = 5
         fxLayer.zPosition = 6
-        for layer in [shadowLayer, pieceLayer, aimLayer, fxLayer] { addChild(layer) }
+        for layer in [marksLayer, shadowLayer, pieceLayer, aimLayer, fxLayer] { addChild(layer) }
 
         slingshot.position = anchor
         slingshot.onLaunch = { [weak self] noggin, velocity, spin in
@@ -178,7 +182,8 @@ final class GameScene: SKScene {
         model.recordThrow()
         stillTime = 0
         phase = .rolling
-        softHaptic.impactOccurred(intensity: 0.8)
+        node.mood = .calm
+        node.trail = Effects.grassTrail(in: shadowLayer)
     }
 
     /// Merges every group found among pieces slower than `maxSpeed`. Returns whether any merged.
@@ -206,6 +211,8 @@ final class GameScene: SKScene {
         for node in nodes {
             node.isMerging = true
             node.physicsBody = nil
+            node.mood = .happy
+            node.trail?.particleBirthRate = 0
             let move = SKAction.move(to: target, duration: 0.2)
             move.timingMode = .easeIn
             node.run(.group([move, .scale(to: 0.55, duration: 0.2)]))
@@ -236,6 +243,8 @@ final class GameScene: SKScene {
         add(node)
         node.activatePhysics(velocity: .zero, spin: 0)
         node.popIn()
+        node.react(.happy, for: 0.8)
+        node.trail = Effects.grassTrail(in: shadowLayer)
         pieces.append(node)
         shockwave(at: node.position, reach: kind.radius * 3.2, strength: 260, sparing: kind)
         callFriends(of: node)
@@ -251,6 +260,8 @@ final class GameScene: SKScene {
         node.zPosition = 1
         add(node)
         node.popIn()
+        node.mood = .happy
+        node.addChild(Effects.crownSparkles(radius: kind.radius))
         shockwave(at: node.position, reach: 130, strength: 300, sparing: nil)
         Effects.confetti(at: node.position, colors: [UIColor(hex: 0xFFC93C), .white], amount: 8, in: fxLayer)
         heavyHaptic.impactOccurred(intensity: 1)
@@ -370,6 +381,13 @@ final class GameScene: SKScene {
             node.lastVelocity = velocity
         }
 
+        updateTrails(dt: dt)
+        sinceMoodCheck += dt
+        if sinceMoodCheck >= 0.3 {
+            sinceMoodCheck = 0
+            updateMoods()
+        }
+
         // Safety net for anything that escapes the hedge.
         for node in pieces where !lawnRect.insetBy(dx: -40, dy: -40).contains(node.position) {
             remove(node)
@@ -392,6 +410,40 @@ final class GameScene: SKScene {
             } else {
                 stillTime = 0
             }
+        }
+    }
+
+    /// Grass flecks behind fast rolls, and skid marks where a Noggin curves hard.
+    private func updateTrails(dt: TimeInterval) {
+        for node in pieces {
+            guard let trail = node.trail else { continue }
+            guard let body = node.physicsBody else {
+                trail.particleBirthRate = 0
+                continue
+            }
+            let velocity = body.velocity
+            let speed = velocity.length
+            trail.position = node.position + velocity.normalized * -node.radius * 0.8
+            trail.emissionAngle = atan2(-velocity.dy, -velocity.dx)
+            trail.particleBirthRate = speed > 220 ? min(90, (speed - 220) * 0.12) : 0
+            trail.particleSpeed = 40 + speed * 0.08
+
+            if abs(body.angularVelocity) > 3.5, speed > 120, clock - node.lastSkid > 0.035 {
+                node.lastSkid = clock
+                Effects.skidMark(at: node.position, radius: node.radius, in: marksLayer)
+            }
+        }
+    }
+
+    /// Resting Noggins look happy while a match of theirs is close by.
+    private func updateMoods() {
+        let resting = pieces.filter { !$0.isMerging && $0.physicsBody != nil }
+        for node in resting {
+            let reach = (2 * node.radius + node.kind.tier.mergeGap) * 1.8
+            let friendNearby = resting.contains { other in
+                other !== node && other.kind == node.kind && other.position.distance(to: node.position) < reach
+            }
+            node.mood = friendNearby ? .happy : .calm
         }
     }
 
@@ -430,6 +482,10 @@ final class GameScene: SKScene {
         pieces.removeAll { $0 === node }
         node.removeFromParent()
         node.shadow.removeFromParent()
+        node.trail?.particleBirthRate = 0
+        if let trail = node.trail {
+            trail.run(.sequence([.wait(forDuration: 0.7), .removeFromParent()]))
+        }
     }
 
     // MARK: - Aiming
@@ -439,7 +495,7 @@ final class GameScene: SKScene {
         dragStart = touch.location(in: self)
         dragPath = [.zero]
         slingshot.beginHold()
-        softHaptic.prepare()
+        haptics.beginStretch()
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -454,9 +510,13 @@ final class GameScene: SKScene {
         }
         let previous = slingshot.pull.length
         slingshot.setPull(pull)
+        let stretch = pull.length / Slingshot.maxPull
+        haptics.updateStretch(stretch)
         if Int(pull.length / 14) != Int(previous / 14) {
-            softHaptic.impactOccurred(intensity: 0.25 + 0.5 * pull.length / Slingshot.maxPull)
+            haptics.tick(0.25 + 0.5 * stretch)
         }
+        // A tight band makes the loaded Noggin nervous.
+        loaded?.mood = stretch > 0.75 ? .nervous : .calm
         updateAim(pull)
     }
 
@@ -465,10 +525,13 @@ final class GameScene: SKScene {
         dragStart = nil
         hideAim()
         let pull = slingshot.pull
+        loaded?.mood = .calm
         if pull.length >= Slingshot.minPull {
             slingshot.fire(velocity: pull * -Slingshot.launchScale, spin: spin(for: dragPath))
+            haptics.snap()
             phase = .resolving
         } else {
+            haptics.endStretch()
             slingshot.release()
         }
     }
@@ -477,6 +540,8 @@ final class GameScene: SKScene {
         guard dragStart != nil else { return }
         dragStart = nil
         hideAim()
+        haptics.endStretch()
+        loaded?.mood = .calm
         slingshot.release()
     }
 
@@ -612,13 +677,20 @@ extension GameScene: @preconcurrency SKPhysicsContactDelegate {
         let closing = abs(relative.dot(contact.contactNormal))
         guard closing > 40 else { return }
         let intensity = min(1, closing / 700)
-        a?.squish(intensity)
-        b?.squish(intensity)
+        for node in [a, b].compactMap({ $0 }) where !node.isMerging {
+            node.squish(intensity)
+            // Big hits leave them dizzy; solid ones make them wince.
+            if intensity > 0.8 {
+                node.react(.dizzy, for: 1.2)
+            } else if intensity > 0.45 {
+                node.react(.wince, for: 0.35)
+            }
+        }
         let dustColor = (a != nil && b != nil) ? UIColor.white : UIColor(hex: 0x2C6A34)
         Effects.dust(at: contact.contactPoint, intensity: intensity, color: dustColor, in: fxLayer)
         if clock - lastHaptic > 0.06 {
             lastHaptic = clock
-            softHaptic.impactOccurred(intensity: 0.3 + 0.7 * intensity)
+            haptics.thud(intensity, againstWall: a == nil || b == nil)
         }
     }
 }

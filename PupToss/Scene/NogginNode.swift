@@ -14,6 +14,26 @@ final class NogginNode: SKNode {
     var isMerging = false
     /// Velocity going into the latest physics step, used to measure impact strength.
     var lastVelocity: CGVector = .zero
+    /// Grass flecks kicked up behind a fast roll; owned and positioned by the scene.
+    var trail: SKEmitterNode?
+    /// When this Noggin last left a skid mark, to space them out.
+    var lastSkid: TimeInterval = 0
+
+    /// The resting face: calm (blinks now and then), happy (a match is close by) or nervous
+    /// (stretched tight in the slingshot). Short reactions play over it and then return to it.
+    enum Mood { case calm, happy, nervous }
+
+    var mood = Mood.calm {
+        didSet { if mood != oldValue { showMood() } }
+    }
+
+    private var moodExpression: NogginExpression {
+        switch mood {
+        case .calm: .normal
+        case .happy: .happy
+        case .nervous: .wince
+        }
+    }
 
     var radius: CGFloat { kind.radius }
 
@@ -25,6 +45,7 @@ final class NogginNode: SKNode {
         shadow.strokeColor = .clear
         super.init()
         addChild(art)
+        showMood()
     }
 
     @available(*, unavailable)
@@ -58,6 +79,38 @@ final class NogginNode: SKNode {
         let settle = SKAction.scale(to: 1, duration: 0.09)
         settle.timingMode = .easeOut
         art.run(.sequence([squash, rebound, settle]), withKey: "squish")
+    }
+
+    /// Plays `expression` for `duration`, then returns to the mood's face.
+    func react(_ expression: NogginExpression, for duration: TimeInterval) {
+        art.removeAction(forKey: "face")
+        art.texture = NogginArt.texture(for: kind, expression: expression)
+        art.run(.sequence([.wait(forDuration: duration), faceLoop()]), withKey: "face")
+        if expression == .dizzy {
+            let wobble = SKAction.sequence([
+                .rotate(toAngle: 0.18, duration: 0.12), .rotate(toAngle: -0.18, duration: 0.24),
+                .rotate(toAngle: 0.1, duration: 0.2), .rotate(toAngle: 0, duration: 0.16),
+            ])
+            art.run(wobble, withKey: "wobble")
+        }
+    }
+
+    private func showMood() {
+        art.removeAction(forKey: "face")
+        art.run(faceLoop(), withKey: "face")
+    }
+
+    /// The mood's face; a calm face also blinks every few seconds.
+    private func faceLoop() -> SKAction {
+        let rest = SKAction.setTexture(NogginArt.texture(for: kind, expression: moodExpression))
+        guard mood == .calm else { return rest }
+        let blink = SKAction.sequence([
+            .wait(forDuration: 3.5, withRange: 4),
+            .setTexture(NogginArt.texture(for: kind, expression: .blink)),
+            .wait(forDuration: 0.11),
+            rest,
+        ])
+        return .sequence([rest, .repeatForever(blink)])
     }
 
     func popIn() {
