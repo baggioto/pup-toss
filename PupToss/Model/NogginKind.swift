@@ -37,9 +37,43 @@ nonisolated enum Tier: Int, CaseIterable, Sendable {
     }
 }
 
+/// Rare pieces that turn up in the throw queue.
+nonisolated enum Special: String, CaseIterable, Sendable {
+    /// Merges with a Pup of any breed and becomes that breed's Good Boy.
+    case wild
+    /// Draws nearby Noggins toward it after it lands; eaten at the end of the turn.
+    case bone
+    /// A heavy head that ploughs through the lawn; never merges, trots off at the end of the turn.
+    case bulldog
+
+    var displayName: String {
+        switch self {
+        case .wild: "Wild Pup"
+        case .bone: "Bone"
+        case .bulldog: "Bulldog"
+        }
+    }
+}
+
 nonisolated struct NogginKind: Hashable, Sendable {
     var breed: Breed
     var tier: Tier
+    var special: Special? = nil
 
-    var radius: CGFloat { tier.radius }
+    /// A special piece. Its breed is a placeholder and never used for matching.
+    static func special(_ special: Special) -> NogginKind {
+        NogginKind(breed: .shiba, tier: .pup, special: special)
+    }
+
+    var radius: CGFloat {
+        switch special {
+        case .bone: 16
+        case .bulldog: 30
+        case .wild, nil: tier.radius
+        }
+    }
+
+    var isWild: Bool { special == .wild }
+    /// Bones and Bulldogs stay out of merges and leave the lawn at the end of the turn.
+    var isVisitor: Bool { special == .bone || special == .bulldog }
 }

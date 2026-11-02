@@ -7,10 +7,12 @@ nonisolated struct MergePiece: Sendable {
 }
 
 nonisolated struct MergeGroup: Equatable, Sendable {
+    /// The kind the group merges as (never a special: a Wild Pup takes its partners' breed).
     var kind: NogginKind
     /// Ids of the member pieces, ascending.
     var ids: [Int]
     var centroid: CGPoint
+    var usesWild = false
 
     /// Merging into a Top Dog celebrates and removes it instead of leaving it on the lawn.
     var pops: Bool { kind.tier.next == .topDog }
@@ -21,6 +23,8 @@ nonisolated enum MergeEngine {
 
     /// Clusters pieces of the same breed and tier whose edges are within their tier's merge gap.
     /// Proximity is transitive: A near B near C is one group even if A and C are far apart.
+    /// A Wild Pup joins the largest group of Pups it touches, whatever their breed; it never joins
+    /// another Wild Pup alone. Bones and Bulldogs never merge.
     static func groups(in pieces: [MergePiece]) -> [MergeGroup] {
         var parent = Array(pieces.indices)
 
@@ -33,19 +37,38 @@ nonisolated enum MergeEngine {
             return i
         }
 
-        for i in pieces.indices {
-            for j in pieces.indices where j > i {
+        func near(_ a: MergePiece, _ b: MergePiece, gap: CGFloat) -> Bool {
+            a.position.distance(to: b.position) <= a.kind.radius + b.kind.radius + gap
+        }
+
+        let normals = pieces.indices.filter { pieces[$0].kind.special == nil }
+        for i in normals {
+            for j in normals where j > i {
                 let a = pieces[i], b = pieces[j]
-                guard a.kind == b.kind else { continue }
-                if a.position.distance(to: b.position) <= a.kind.radius + b.kind.radius + a.kind.tier.mergeGap {
-                    parent[root(i)] = root(j)
-                }
+                guard a.kind == b.kind, near(a, b, gap: a.kind.tier.mergeGap) else { continue }
+                parent[root(i)] = root(j)
             }
         }
 
         var clusters: [Int: [Int]] = [:]
-        for i in pieces.indices {
+        for i in normals {
             clusters[root(i), default: []].append(i)
+        }
+
+        // Each Wild Pup joins the biggest touching cluster of Pups (nearest on a tie).
+        for w in pieces.indices where pieces[w].kind.isWild {
+            let wild = pieces[w]
+            let touching = normals.filter { i in
+                pieces[i].kind.tier == .pup && near(wild, pieces[i], gap: Tier.pup.mergeGap)
+            }
+            let best = touching.max { a, b in
+                let sizeA = clusters[root(a)]?.count ?? 0, sizeB = clusters[root(b)]?.count ?? 0
+                if sizeA != sizeB { return sizeA < sizeB }
+                return wild.position.distance(to: pieces[a].position) > wild.position.distance(to: pieces[b].position)
+            }
+            if let best {
+                clusters[root(best), default: []].append(w)
+            }
         }
 
         return clusters.values
@@ -54,10 +77,12 @@ nonisolated enum MergeEngine {
                 let n = CGFloat(members.count)
                 let sumX = members.reduce(0) { $0 + pieces[$1].position.x }
                 let sumY = members.reduce(0) { $0 + pieces[$1].position.y }
+                let anchor = members.first { pieces[$0].kind.special == nil } ?? members[0]
                 return MergeGroup(
-                    kind: pieces[members[0]].kind,
+                    kind: pieces[anchor].kind,
                     ids: members.map { pieces[$0].id }.sorted(),
-                    centroid: CGPoint(x: sumX / n, y: sumY / n)
+                    centroid: CGPoint(x: sumX / n, y: sumY / n),
+                    usesWild: members.contains { pieces[$0].kind.isWild }
                 )
             }
             .sorted { $0.ids[0] < $1.ids[0] }

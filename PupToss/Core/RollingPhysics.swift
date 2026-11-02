@@ -16,7 +16,7 @@ nonisolated struct RollingPhysics: Sendable {
     /// Below this speed curve no longer applies and the piece counts as still.
     var restSpeed: CGFloat = 5
 
-    func step(velocity: inout CGVector, spin: inout CGFloat, dt: CGFloat) {
+    func step(velocity: inout CGVector, spin: inout CGFloat, dt: CGFloat, surface: Surface = .grass) {
         var v = velocity
         if v.length > restSpeed {
             // Positive (counter-clockwise) spin pushes to the left of travel.
@@ -24,7 +24,7 @@ nonisolated struct RollingPhysics: Sendable {
         }
         let speed = v.length
         if speed > 0 {
-            let slowed = max(0, speed - friction * dt) / (1 + drag * dt)
+            let slowed = max(0, speed - friction * surface.friction * dt) / (1 + drag * surface.drag * dt)
             v = v * (slowed / speed)
         }
         velocity = v
@@ -34,27 +34,53 @@ nonisolated struct RollingPhysics: Sendable {
         spin = spin < 0 ? -w : w
     }
 
-    /// Path a throw follows with no collisions, ending where it stops or reaches `bounds`.
+    /// Path a throw follows, ignoring other Noggins. It feels the lawn's sand and puddles, bounces
+    /// up to `bounces` times off `bounds` or rocks, and ends where it stops or at the next contact.
     func predictPath(
         from start: CGPoint,
         velocity: CGVector,
         spin: CGFloat,
         radius: CGFloat,
         bounds: CGRect,
+        features: LawnFeatures = .none,
+        bounces: Int = 1,
+        restitution: CGFloat = 0.6,
         dt: CGFloat = 1.0 / 120.0,
         maxTime: CGFloat = 6
     ) -> [CGPoint] {
         let inner = bounds.insetBy(dx: radius, dy: radius)
         var p = start, v = velocity, w = spin, t: CGFloat = 0
+        var bouncesLeft = bounces
         var points = [start]
         while t < maxTime {
-            step(velocity: &v, spin: &w, dt: dt)
+            step(velocity: &v, spin: &w, dt: dt, surface: features.surface(at: p))
             if v.length == 0 { break }
-            p = p + v * dt
-            if !inner.contains(p) {
-                points.append(p.clamped(to: inner))
-                break
+            var next = p + v * dt
+
+            if !inner.contains(next) {
+                guard bouncesLeft > 0 else {
+                    points.append(next.clamped(to: inner))
+                    break
+                }
+                bouncesLeft -= 1
+                if next.x < inner.minX || next.x > inner.maxX { v.dx = -v.dx * restitution }
+                if next.y < inner.minY || next.y > inner.maxY { v.dy = -v.dy * restitution }
+                w *= 0.5
+                next = next.clamped(to: inner)
+            } else if let rock = features.rocks.first(where: { $0.center.distance(to: next) < $0.radius + radius }) {
+                let normal = (next - rock.center).normalized
+                let contact = rock.center + normal * (rock.radius + radius)
+                guard bouncesLeft > 0 else {
+                    points.append(contact)
+                    break
+                }
+                bouncesLeft -= 1
+                v = v - normal * ((1 + restitution) * v.dot(normal))
+                w *= 0.5
+                next = contact
             }
+
+            p = next
             points.append(p)
             t += dt
         }

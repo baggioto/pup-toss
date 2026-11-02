@@ -8,11 +8,11 @@ struct RootView: View {
     @State private var scene: GameScene
     @State private var screen = Self.startsInGame ? Screen.game : Screen.home
 
-    /// Debug scenarios (`-autoplay`, `-debugGoodBoys`, `-debugChain`, `-debugHUD`) skip the home screen.
+    /// Debug options (`-autoplay` and the `-debug…` scenarios) skip the home screen.
     private static var startsInGame: Bool {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        return ["-autoplay", "-debugGoodBoys", "-debugChain", "-debugHUD"].contains(where: arguments.contains)
+        return ["-autoplay", "-debugGoodBoys", "-debugChain", "-debugHUD", "-debugLawn", "-debugDrama"].contains(where: arguments.contains)
         #else
         false
         #endif

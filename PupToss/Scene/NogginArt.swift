@@ -40,7 +40,7 @@ enum NogginArt {
 
     /// `radius` is the head circle's radius; ears and crown extend beyond it.
     static func image(for kind: NogginKind, radius: CGFloat, expression: NogginExpression = .normal) -> UIImage {
-        let key = "\(kind.breed.rawValue)-\(kind.tier.rawValue)-\(radius)-\(expression.rawValue)"
+        let key = "\(kind.special?.rawValue ?? kind.breed.rawValue)-\(kind.tier.rawValue)-\(radius)-\(expression.rawValue)"
         if let cached = images[key] { return cached }
         // Art is authored in a 100-unit box with the head circle (r = 37) centred at (50, 58).
         let unit = radius / 37
@@ -54,6 +54,27 @@ enum NogginArt {
         }
         images[key] = image
         return image
+    }
+
+    /// A cream bone lying across the head's circle; it has no face.
+    private static func drawBone() {
+        let bone = UIBezierPath(roundedRect: CGRect(x: 22, y: 51, width: 56, height: 14), cornerRadius: 6)
+        for (x, y) in [(CGFloat(20), CGFloat(50)), (20, 66), (80, 50), (80, 66)] {
+            bone.append(UIBezierPath(ovalIn: CGRect(x: x - 10, y: y - 10, width: 20, height: 20)))
+        }
+        UIColor(hex: 0xF6EBD5).setFill()
+        bone.fill()
+        UIColor.ink.setStroke()
+        bone.lineWidth = 3
+        bone.stroke()
+        // Re-fill the middle so the overlapping outlines read as one bone.
+        UIColor(hex: 0xF6EBD5).setFill()
+        UIBezierPath(roundedRect: CGRect(x: 21, y: 52.5, width: 58, height: 11), cornerRadius: 5).fill()
+        for (x, y) in [(CGFloat(20), CGFloat(50)), (20, 66), (80, 50), (80, 66)] {
+            UIBezierPath(ovalIn: CGRect(x: x - 8.5, y: y - 8.5, width: 17, height: 17)).fill()
+        }
+        UIColor(hex: 0xFFFFFF, alpha: 0.7).setFill()
+        UIBezierPath(roundedRect: CGRect(x: 30, y: 54, width: 30, height: 3), cornerRadius: 1.5).fill()
     }
 
     static func colors(for breed: Breed) -> [UIColor] {
@@ -92,6 +113,23 @@ enum NogginArt {
         var lids = false
         /// Open mouth with a row of little teeth instead of the smile.
         var grin = false
+        /// Rainbow bands across the head (the Wild Pup).
+        var rainbow = false
+        /// Wide muzzle, forehead wrinkles and an underbite with two teeth (the Bulldog).
+        var bulldog = false
+
+        static func of(_ kind: NogginKind) -> Look {
+            switch kind.special {
+            case .wild:
+                Look(fur: UIColor(hex: 0xF6B6C8), muzzle: .white, inner: UIColor(hex: 0xFFF3B0),
+                     earFill: UIColor(hex: 0xB49BF2), eye: .ink, ears: .pointy, rainbow: true)
+            case .bulldog:
+                Look(fur: UIColor(hex: 0xC08E5E), muzzle: UIColor(hex: 0xF3E6D4), inner: UIColor(hex: 0x6B4A30),
+                     earFill: UIColor(hex: 0x6B4A30), eye: .ink, ears: .fold, bulldog: true)
+            case .bone, nil:
+                of(kind.breed)
+            }
+        }
 
         static func of(_ breed: Breed) -> Look {
             switch breed {
@@ -120,7 +158,11 @@ enum NogginArt {
     }
 
     private static func draw(_ kind: NogginKind, _ expression: NogginExpression) {
-        let look = Look.of(kind.breed)
+        if kind.special == .bone {
+            drawBone()
+            return
+        }
+        let look = Look.of(kind)
         // Expression lines drawn on the fur need to be light on dark breeds.
         var brightness: CGFloat = 0
         look.fur.getHue(nil, saturation: nil, brightness: &brightness, alpha: nil)
@@ -209,6 +251,41 @@ enum NogginArt {
 
         paint(circle(50, 58, 37), look.fur, stroke: 3)
 
+        if look.rainbow, let cg = UIGraphicsGetCurrentContext() {
+            cg.saveGState()
+            circle(50, 58, 35.5).addClip()
+            let bands: [UInt32] = [0xFF8FA0, 0xFFB46B, 0xFFE27A, 0x9BE39A, 0x8EC5FF, 0xC3A6FF]
+            for (i, color) in bands.enumerated() {
+                let band = UIBezierPath(rect: CGRect(x: 0, y: 18 + CGFloat(i) * 13, width: 100, height: 13))
+                band.apply(CGAffineTransform(translationX: -50, y: -58).concatenating(CGAffineTransform(rotationAngle: -0.35))
+                    .concatenating(CGAffineTransform(translationX: 50, y: 58)))
+                UIColor(hex: color).setFill()
+                band.fill()
+            }
+            cg.restoreGState()
+            paint(circle(50, 58, 37), nil, stroke: 3)
+            // A little star on the forehead.
+            var star: [(CGFloat, CGFloat)] = []
+            for i in 0..<10 {
+                let angle = CGFloat(i) * .pi / 5 - .pi / 2
+                let r: CGFloat = i.isMultiple(of: 2) ? 6 : 2.6
+                star.append((50 + cos(angle) * r, 34 + sin(angle) * r))
+            }
+            paint(polygon(star), .white, stroke: 1.5)
+        }
+
+        if look.bulldog {
+            let wrinkles = UIBezierPath()
+            for y in [CGFloat(33), 39] {
+                wrinkles.move(to: CGPoint(x: 41, y: y))
+                wrinkles.addQuadCurve(to: CGPoint(x: 59, y: y), controlPoint: CGPoint(x: 50, y: y - 4))
+            }
+            paint(wrinkles, nil, stroke: 2)
+            // Droopy jowls behind the muzzle.
+            paint(ellipse(36, 78, 13, 10), look.muzzle, stroke: 2)
+            paint(ellipse(64, 78, 13, 10), look.muzzle, stroke: 2)
+        }
+
         if look.spots {
             for (x, y, r) in [(CGFloat(30), CGFloat(40), CGFloat(5)), (69, 36, 4), (76, 62, 5), (23, 64, 3), (58, 28, 2.5)] {
                 paint(circle(x, y, r), .ink)
@@ -227,7 +304,7 @@ enum NogginArt {
             paint(polygon([(37, 88), (43, 98), (50, 94), (57, 98), (63, 88), (50, 84)]), .white, stroke: 2)
         }
 
-        paint(ellipse(50, 72, 20, 15), look.muzzle, stroke: 2)
+        paint(look.bulldog ? ellipse(50, 72, 23, 15) : ellipse(50, 72, 20, 15), look.muzzle, stroke: 2)
         if let chin = look.chin {
             paint(ellipse(50, 80, 12, 5.5), chin)
         }
@@ -335,6 +412,12 @@ enum NogginArt {
             paint(openPolyline([(42, 74), (45, 76.5), (48, 74), (51, 76.5), (54, 74), (57, 76.5)]), nil, stroke: 2)
         case .dizzy:
             paint(ellipse(50, 75, 3.6, 3), mouthColor, stroke: 1.5)
+        }
+
+        if look.bulldog {
+            // Underbite: two little teeth poking up over the lip.
+            paint(polygon([(42, 79), (44, 73), (46.5, 79)]), .white, stroke: 1.5)
+            paint(polygon([(53.5, 79), (56, 73), (58, 79)]), .white, stroke: 1.5)
         }
 
         if kind.tier != .pup {

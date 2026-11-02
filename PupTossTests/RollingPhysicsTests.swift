@@ -40,7 +40,7 @@ struct RollingPhysicsTests {
 
     @Test func predictedPathStopsAtTheBounds() {
         let bounds = CGRect(x: -100, y: -100, width: 200, height: 200)
-        let path = physics.predictPath(from: .zero, velocity: CGVector(dx: 0, dy: 1000), spin: 0, radius: 20, bounds: bounds)
+        let path = physics.predictPath(from: .zero, velocity: CGVector(dx: 0, dy: 1000), spin: 0, radius: 20, bounds: bounds, bounces: 0)
         #expect(abs((path.last?.y ?? 0) - 80) < 0.001)
     }
 }

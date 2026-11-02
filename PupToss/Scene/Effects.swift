@@ -39,6 +39,90 @@ enum Effects {
         return emitter
     }
 
+    // MARK: Lawn features
+
+    /// A sandy patch with a few darker grains. Grains are placed from the radius, not at random,
+    /// so the same patch always looks the same.
+    static func sandPatch(radius: CGFloat) -> SKNode {
+        let patch = SKShapeNode(path: blobPath(radius: radius, wobble: 0.06, lobes: 7))
+        patch.fillColor = UIColor(hex: 0xE2C887)
+        patch.strokeColor = UIColor(hex: 0xC9AC66)
+        patch.lineWidth = 3
+        for i in 0..<12 {
+            let angle = CGFloat(i) * 2.4
+            let distance = radius * (0.2 + 0.6 * CGFloat((i * 7) % 10) / 10)
+            let grain = SKShapeNode(circleOfRadius: 1.8 + CGFloat(i % 3) * 0.6)
+            grain.fillColor = UIColor(hex: 0xC4A25A)
+            grain.strokeColor = .clear
+            grain.position = CGPoint(x: cos(angle) * distance, y: sin(angle) * distance)
+            patch.addChild(grain)
+        }
+        return patch
+    }
+
+    /// A slick blue puddle with a shimmering highlight.
+    static func puddle(radius: CGFloat) -> SKNode {
+        let puddle = SKShapeNode(path: blobPath(radius: radius, wobble: 0.08, lobes: 5))
+        puddle.fillColor = UIColor(hex: 0x73B9E6)
+        puddle.strokeColor = UIColor(hex: 0x4E97CB)
+        puddle.lineWidth = 3
+        let shine = SKShapeNode(ellipseOf: CGSize(width: radius * 0.7, height: radius * 0.22))
+        shine.fillColor = UIColor(white: 1, alpha: 0.5)
+        shine.strokeColor = .clear
+        shine.position = CGPoint(x: -radius * 0.25, y: radius * 0.38)
+        shine.run(.repeatForever(.sequence([.fadeAlpha(to: 0.35, duration: 1.1), .fadeAlpha(to: 1, duration: 1.1)])))
+        puddle.addChild(shine)
+        return puddle
+    }
+
+    /// A grey boulder with an ink outline, a highlight and a shadow.
+    static func rock(radius: CGFloat) -> SKNode {
+        let rock = SKNode()
+        let shadow = SKShapeNode(circleOfRadius: radius * 1.02)
+        shadow.fillColor = UIColor(white: 0, alpha: 0.2)
+        shadow.strokeColor = .clear
+        shadow.position = CGPoint(x: 2.5, y: -4)
+        let stone = SKShapeNode(path: blobPath(radius: radius, wobble: 0.09, lobes: 4))
+        stone.fillColor = UIColor(hex: 0x9A958F)
+        stone.strokeColor = .ink
+        stone.lineWidth = 3
+        let highlight = SKShapeNode(ellipseOf: CGSize(width: radius * 0.8, height: radius * 0.4))
+        highlight.fillColor = UIColor(white: 1, alpha: 0.35)
+        highlight.strokeColor = .clear
+        highlight.position = CGPoint(x: -radius * 0.2, y: radius * 0.35)
+        rock.addChild(shadow)
+        rock.addChild(stone)
+        rock.addChild(highlight)
+        return rock
+    }
+
+    /// A ring that spreads out on a puddle where a Noggin slides through.
+    static func ripple(at point: CGPoint, radius: CGFloat, in layer: SKNode) {
+        let ring = SKShapeNode(circleOfRadius: radius * 0.6)
+        ring.position = point
+        ring.strokeColor = UIColor(white: 1, alpha: 0.7)
+        ring.lineWidth = 2
+        ring.fillColor = .clear
+        let spread = SKAction.scale(to: 2, duration: 0.6)
+        spread.timingMode = .easeOut
+        ring.run(.sequence([.group([spread, .fadeOut(withDuration: 0.6)]), .removeFromParent()]))
+        layer.addChild(ring)
+    }
+
+    /// A softly wobbly closed outline around a circle.
+    private static func blobPath(radius: CGFloat, wobble: CGFloat, lobes: Int) -> CGPath {
+        let path = CGMutablePath()
+        let steps = 48
+        for step in 0...steps {
+            let angle = CGFloat(step) / CGFloat(steps) * 2 * .pi
+            let r = radius * (1 + wobble * sin(angle * CGFloat(lobes) + 0.7))
+            let point = CGPoint(x: cos(angle) * r, y: sin(angle) * r)
+            if step == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        }
+        path.closeSubpath()
+        return path
+    }
+
     /// A faint scuff on the grass that fades away, left by a hard-curving Noggin.
     static func skidMark(at point: CGPoint, radius: CGFloat, in layer: SKNode) {
         let mark = SKSpriteNode(texture: dot)

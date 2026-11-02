@@ -81,7 +81,7 @@ enum IconExporter {
     private static func exportSheet() {
         let cell: CGFloat = 300, label: CGFloat = 220, header: CGFloat = 70
         let size = CGSize(width: label + cell * CGFloat(Tier.allCases.count),
-                          height: header + cell * CGFloat(Breed.allCases.count))
+                          height: header + cell * CGFloat(Breed.allCases.count + 1))
         let font = UIFont.systemFont(ofSize: 34, weight: .heavy)
         let rounded = font.fontDescriptor.withDesign(.rounded).map { UIFont(descriptor: $0, size: 34) } ?? font
         let text: [NSAttributedString.Key: Any] = [.font: rounded, .foregroundColor: UIColor.ink]
@@ -101,6 +101,15 @@ enum IconExporter {
                     image.draw(at: CGPoint(x: label + CGFloat(column) * cell + (cell - image.size.width) / 2,
                                            y: y + (cell - image.size.height) / 2))
                 }
+            }
+            // Last row: the specials, drawn at their in-game sizes relative to a Pup.
+            let y = header + CGFloat(Breed.allCases.count) * cell
+            ("Specials" as NSString).draw(at: CGPoint(x: 24, y: y + cell / 2 - 22), withAttributes: text)
+            for (column, special) in Special.allCases.enumerated() {
+                let kind = NogginKind.special(special)
+                let image = NogginArt.image(for: kind, radius: 70 * kind.radius / Tier.pup.radius)
+                image.draw(at: CGPoint(x: label + CGFloat(column) * cell + (cell - image.size.width) / 2,
+                                       y: y + (cell - image.size.height) / 2))
             }
         }
         let url = URL.documentsDirectory.appending(path: "Sheet.png")

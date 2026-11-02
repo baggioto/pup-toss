@@ -19,6 +19,19 @@ The app opens on a home screen with your personal best in the corner. **Play** s
 - **Turn end:** a turn ends only when nothing moves, no merge is animating, and a final check finds nothing left to merge.
 - **Fouls:** a Noggin resting behind the dashed foul line at the end of a turn is removed and counts as a foul. 3 fouls ends the game.
 
+### Gameplay extras
+
+- **Aim line bounces:** the preview reflects once off the hedge or a rock, so bank shots can be lined up.
+- **Almost a match:** while aiming, a pulsing dotted line joins matching pairs that are just outside merge range.
+- **Special Noggins** (from the 6th piece on: Wild Pup 6%, Bone 4%, Bulldog 4%):
+  - **Wild Pup:** rainbow fur; merges with any breed's Pup and becomes that breed's Good Boy.
+  - **Bone:** once it stops, nearby Noggins rush toward it for 1.6 s; it's eaten at the end of the turn.
+  - **Bulldog:** four times the weight, ploughs through the lawn, never merges, and trots off at the end of the turn.
+  - Specials never cause a foul.
+- **Goals:** one at a time under the top bar (×3 chain +300, 3 merges in one throw +300, 4 Good Boys +300, pop a Top Dog +500), in a random order each round.
+- **Lawn features**, rearranged each round above the foul line: sand (2.4× friction), a puddle (0.3× friction) and bouncy rocks.
+- **Last chance:** on 2 fouls or with 18+ pieces on the lawn, a warning shows; as the throw slows to land, time drops to 40% and the camera zooms in.
+
 ### Feel
 
 - **Faces:** Noggins blink, wince on solid hits, go dizzy after big ones, grin when a match is close by, and look nervous when the band is pulled tight.
@@ -109,6 +122,8 @@ xcodebuild -project PupToss.xcodeproj -scheme PupToss \
 | `-debugGoodBoys` | Starts with 3 Good Boys side by side |
 | `-debugChain` | 2 Pups that merge into a Good Boy next to another Good Boy |
 | `-debugChain -far` | Same, with the other Good Boy about 120 pt away |
+| `-debugLawn` | A random lawn with resting near-miss pairs and a Wild Pup, for checking hints and features |
+| `-debugDrama` | Every throw is a last-chance throw (slow motion and zoom) |
 | `-debugHUD` | Starts with a 6-digit score and a ×4 chain, for checking the top bar |
 | `-exportIcon` | Renders the 1024 × 1024 app icon (light, dark and tinted) into the app's Documents folder |
 | `-exportSheet` | Renders every breed at every size into `Sheet.png` in the Documents folder, for reviewing art |

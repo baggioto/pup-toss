@@ -17,6 +17,17 @@ final class GameModel {
     private(set) var upcoming: [NogginKind] = []
     private(set) var isGameOver = false
     private(set) var isNewBest = false
+    private(set) var goals = GoalTracker()
+    /// The latest finished goal; `id` changes each time so views can celebrate it.
+    private(set) var completedGoal: CompletedGoal?
+    /// On the last foul, or with a crowded lawn: the scene warns and adds slow motion to the throw.
+    var isLastChance = false
+    private var generated = 0
+
+    struct CompletedGoal: Equatable {
+        let id: Int
+        let goal: Goal
+    }
 
     init() {
         best = UserDefaults.standard.integer(forKey: Self.bestKey)
@@ -32,13 +43,30 @@ final class GameModel {
         pops = 0
         isGameOver = false
         isNewBest = false
-        upcoming = (0..<3).map { _ in Self.randomKind() }
+        goals = GoalTracker(order: Goal.allCases.shuffled())
+        completedGoal = nil
+        isLastChance = false
+        generated = 0
+        upcoming = (0..<3).map { _ in nextKind() }
     }
 
     func takeNext() -> NogginKind {
         let kind = upcoming.removeFirst()
-        upcoming.append(Self.randomKind())
+        upcoming.append(nextKind())
         return kind
+    }
+
+    /// Counts a merge toward the current goal, awarding its bonus when it completes.
+    @discardableResult
+    func recordMerge(into tier: Tier) -> Goal? {
+        guard let done = goals.recordMerge(into: tier, chain: chain) else { return nil }
+        score += done.bonus
+        completedGoal = CompletedGoal(id: (completedGoal?.id ?? 0) + 1, goal: done)
+        return done
+    }
+
+    func throwEnded() {
+        goals.throwEnded()
     }
 
     func recordThrow() {
@@ -70,8 +98,16 @@ final class GameModel {
         }
     }
 
-    /// Only Pups are thrown; bigger tiers exist only through merging.
-    private static func randomKind() -> NogginKind {
-        NogginKind(breed: Breed.allCases.randomElement() ?? .shiba, tier: .pup)
+    /// Only Pups are thrown; bigger tiers exist only through merging. From the sixth piece on, a
+    /// special turns up now and then: Wild Pup 6%, Bone 4%, Bulldog 4%.
+    private func nextKind() -> NogginKind {
+        generated += 1
+        if generated > 5 {
+            let roll = Double.random(in: 0..<1)
+            if roll < 0.06 { return .special(.wild) }
+            if roll < 0.10 { return .special(.bone) }
+            if roll < 0.14 { return .special(.bulldog) }
+        }
+        return NogginKind(breed: Breed.allCases.randomElement() ?? .shiba, tier: .pup)
     }
 }
