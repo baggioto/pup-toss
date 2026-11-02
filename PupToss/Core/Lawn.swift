@@ -1,7 +1,7 @@
 import CoreGraphics
 
 /// How a patch of ground changes rolling: multipliers on grass friction and drag.
-nonisolated struct Surface: Equatable, Sendable {
+nonisolated struct Surface: Equatable, Codable, Sendable {
     var friction: CGFloat
     var drag: CGFloat
 
@@ -13,14 +13,18 @@ nonisolated struct Surface: Equatable, Sendable {
 }
 
 /// The round's sand patches, puddles and rocks.
-nonisolated struct LawnFeatures: Sendable {
-    nonisolated struct Patch: Sendable {
+nonisolated struct LawnFeatures: Codable, Sendable {
+    nonisolated enum Ground: String, Codable, Sendable { case sand, puddle }
+
+    nonisolated struct Patch: Codable, Sendable {
         var center: CGPoint
         var radius: CGFloat
         var surface: Surface
+        /// What the patch is drawn as and re-tuned as; `nil` for test patches.
+        var ground: Ground? = nil
     }
 
-    nonisolated struct Rock: Sendable {
+    nonisolated struct Rock: Codable, Sendable {
         var center: CGPoint
         var radius: CGFloat
     }
@@ -29,6 +33,21 @@ nonisolated struct LawnFeatures: Sendable {
     var rocks: [Rock] = []
 
     static let none = LawnFeatures()
+
+    /// The same layout with sand and puddles feeling like `sand` and `puddle` (for live tuning).
+    func with(sand: Surface, puddle: Surface) -> LawnFeatures {
+        var copy = self
+        copy.patches = patches.map { patch in
+            var patch = patch
+            switch patch.ground {
+            case .sand: patch.surface = sand
+            case .puddle: patch.surface = puddle
+            case nil: break
+            }
+            return patch
+        }
+        return copy
+    }
 
     func surface(at point: CGPoint) -> Surface {
         patches.first { $0.center.distance(to: point) <= $0.radius }?.surface ?? .grass
@@ -57,9 +76,9 @@ nonisolated struct LawnFeatures: Sendable {
         }
 
         for _ in 0..<Int.random(in: 1...2, using: &generator) {
-            if let (c, r) = place(radius: 40...56) { features.patches.append(Patch(center: c, radius: r, surface: .sand)) }
+            if let (c, r) = place(radius: 40...56) { features.patches.append(Patch(center: c, radius: r, surface: .sand, ground: .sand)) }
         }
-        if let (c, r) = place(radius: 38...50) { features.patches.append(Patch(center: c, radius: r, surface: .puddle)) }
+        if let (c, r) = place(radius: 38...50) { features.patches.append(Patch(center: c, radius: r, surface: .puddle, ground: .puddle)) }
         for _ in 0..<Int.random(in: 1...2, using: &generator) {
             if let (c, r) = place(radius: 15...21) { features.rocks.append(Rock(center: c, radius: r)) }
         }

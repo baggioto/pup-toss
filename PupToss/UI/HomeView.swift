@@ -3,6 +3,8 @@ import SwiftUI
 struct HomeView: View {
     let best: Int
     let onPlay: () -> Void
+    /// Shown as a Continue button when there's a saved round.
+    var onContinue: (() -> Void)?
 
     var body: some View {
         ZStack {
@@ -37,10 +39,19 @@ struct HomeView: View {
 
                 Spacer(minLength: 16)
 
-                Button("Play", action: onPlay)
-                    .buttonStyle(ChunkyButtonStyle(height: 68, fontSize: 30))
-                    .padding(.horizontal, 32)
-                    .padding(.bottom, 40)
+                VStack(spacing: 12) {
+                    if let onContinue {
+                        Button("Continue", action: onContinue)
+                            .buttonStyle(ChunkyButtonStyle(height: 68, fontSize: 30))
+                        Button("New game", action: onPlay)
+                            .buttonStyle(ChunkyButtonStyle(fill: .white, height: 52, fontSize: 20, depth: 4))
+                    } else {
+                        Button("Play", action: onPlay)
+                            .buttonStyle(ChunkyButtonStyle(height: 68, fontSize: 30))
+                    }
+                }
+                .padding(.horizontal, 32)
+                .padding(.bottom, 40)
             }
         }
     }
@@ -152,6 +163,8 @@ private struct NogginCluster: View {
 
     private func bark(_ member: Member) {
         hops[member.id, default: 0] += 1
+        // Small dogs yip higher.
+        SoundEngine.shared.play(.bark, pitch: Float(40 / member.radius) * Float.random(in: 0.95...1.05))
         withAnimation(.spring(duration: 0.25, bounce: 0.5)) { barking = member.id }
         Task {
             try? await Task.sleep(for: .seconds(0.8))

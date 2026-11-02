@@ -1,7 +1,7 @@
 import Foundation
 
 /// One bonus objective at a time during a round.
-nonisolated enum Goal: CaseIterable, Sendable {
+nonisolated enum Goal: CaseIterable, Codable, Sendable {
     case chainOfThree
     case popTopDog
     case threeMergesInOneThrow
@@ -45,7 +45,7 @@ nonisolated enum Goal: CaseIterable, Sendable {
     var resetsEachThrow: Bool { self == .chainOfThree || self == .threeMergesInOneThrow }
 }
 
-nonisolated struct GoalTracker: Sendable {
+nonisolated struct GoalTracker: Codable, Sendable {
     private let order: [Goal]
     private var index = 0
     private var mergesThisThrow = 0

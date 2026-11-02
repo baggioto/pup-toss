@@ -5,9 +5,14 @@ struct GameView: View {
     let model: GameModel
     let scene: GameScene
     let onHome: () -> Void
+    /// Saves the round so it can be continued.
+    let onSave: () -> Void
 
+    @Environment(\.scenePhase) private var scenePhase
     @State private var isPaused = false
+    @State private var showTuning = false
     @State private var celebrating: GameModel.CompletedGoal?
+    @State private var announcing: GameModel.NewBreed?
 
     var body: some View {
         ZStack {
@@ -29,6 +34,12 @@ struct GameView: View {
             .padding(.horizontal, 16)
             .padding(.top, 4)
             .animation(.spring(duration: 0.35, bounce: 0.5), value: model.isLastChance)
+            if let announcing {
+                NewBreedBanner(breed: announcing.breed)
+                    .id(announcing.id)
+                    .transition(.scale(scale: 0.5).combined(with: .opacity))
+                    .allowsHitTesting(false)
+            }
             if let celebrating {
                 GoalBanner(goal: celebrating.goal)
                     .id(celebrating.id)
@@ -37,12 +48,14 @@ struct GameView: View {
             }
             if isPaused {
                 PauseView(
+                    model: model,
                     onResume: { isPaused = false },
                     onRestart: {
                         scene.restart()
                         isPaused = false
                     },
-                    onHome: onHome
+                    onHome: onHome,
+                    onTuning: { showTuning = true }
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.92)))
             }
@@ -54,6 +67,29 @@ struct GameView: View {
         .animation(.spring(duration: 0.35), value: model.isGameOver)
         .animation(.spring(duration: 0.3), value: isPaused)
         .animation(.spring(duration: 0.4, bounce: 0.45), value: celebrating)
+        .animation(.spring(duration: 0.4, bounce: 0.45), value: announcing)
+        #if DEBUG
+        .sheet(isPresented: $showTuning) {
+            TuningView(model: model)
+                .presentationDetents([.medium, .large])
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        }
+        #endif
+        // Leaving the app pauses the game and keeps the round for Continue.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase != .active, !model.isGameOver else { return }
+            isPaused = true
+            onSave()
+        }
+        .onChange(of: model.newBreed) { _, breed in
+            guard let breed else { return }
+            announcing = breed
+            SoundEngine.shared.play(.unlock)
+            Task {
+                try? await Task.sleep(for: .seconds(2.2))
+                if announcing == breed { announcing = nil }
+            }
+        }
         .onChange(of: model.completedGoal) { _, completed in
             guard let completed else { return }
             celebrating = completed
@@ -144,9 +180,11 @@ private struct GoalBanner: View {
 }
 
 private struct PauseView: View {
+    @Bindable var model: GameModel
     let onResume: () -> Void
     let onRestart: () -> Void
     let onHome: () -> Void
+    let onTuning: () -> Void
 
     var body: some View {
         ZStack {
@@ -160,8 +198,50 @@ private struct PauseView: View {
                     .buttonStyle(ChunkyButtonStyle(fill: .white, height: 52, fontSize: 20, depth: 4))
                 Button("Home", action: onHome)
                     .buttonStyle(ChunkyButtonStyle(fill: .white, height: 52, fontSize: 20, depth: 4))
+                Toggle(isOn: $model.isSoundOn) {
+                    Label("Sound", systemImage: model.isSoundOn ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                        .font(.rounded(18, .bold))
+                        .foregroundStyle(.white)
+                }
+                .tint(.tangerine)
+                .padding(.horizontal, 6)
+                .padding(.top, 4)
+                #if DEBUG
+                Button("Tuning (debug)", action: onTuning)
+                    .font(.rounded(15, .bold))
+                    .foregroundStyle(.white)
+                    .padding(.top, 2)
+                #endif
             }
             .padding(.horizontal, 40)
         }
+    }
+}
+
+/// Announces a breed joining the round.
+private struct NewBreedBanner: View {
+    let breed: Breed
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(uiImage: NogginArt.image(for: NogginKind(breed: breed, tier: .pup), radius: 26, expression: .happy))
+            VStack(alignment: .leading, spacing: 0) {
+                Text("NEW BREED")
+                    .font(.rounded(13, .black))
+                    .tracking(1)
+                    .foregroundStyle(Color.ink.opacity(0.7))
+                Text("\(breed.displayName) joins!")
+                    .font(.rounded(24))
+                    .foregroundStyle(Color.ink)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .background(.white, in: RoundedRectangle(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.ink, lineWidth: 3))
+        .background(Color.ink, in: RoundedRectangle(cornerRadius: 22).offset(y: 5))
+        .rotationEffect(.degrees(2))
+        .offset(y: -120)
+        .accessibilityElement(children: .combine)
     }
 }

@@ -53,9 +53,9 @@ final class NogginNode: SKNode {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func activatePhysics(velocity: CGVector, spin: CGFloat) {
+    func activatePhysics(velocity: CGVector, spin: CGFloat, bounce: CGFloat = Tuning.standard.nogginBounce) {
         let body = SKPhysicsBody(circleOfRadius: radius)
-        body.restitution = 0.62
+        body.restitution = bounce
         body.friction = 0.35
         body.linearDamping = 0
         body.angularDamping = 0

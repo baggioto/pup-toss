@@ -1,12 +1,12 @@
 import CoreGraphics
 
-nonisolated enum Breed: String, CaseIterable, Sendable {
+nonisolated enum Breed: String, CaseIterable, Codable, Sendable {
     case shiba, pug, dalmatian, husky, stray, iggy
 
     var displayName: String { rawValue.capitalized }
 }
 
-nonisolated enum Tier: Int, CaseIterable, Sendable {
+nonisolated enum Tier: Int, CaseIterable, Codable, Sendable {
     case pup = 1, goodBoy, topDog
 
     /// The tier a pair of these merges into; `nil` for the top tier.
@@ -38,7 +38,7 @@ nonisolated enum Tier: Int, CaseIterable, Sendable {
 }
 
 /// Rare pieces that turn up in the throw queue.
-nonisolated enum Special: String, CaseIterable, Sendable {
+nonisolated enum Special: String, CaseIterable, Codable, Sendable {
     /// Merges with a Pup of any breed and becomes that breed's Good Boy.
     case wild
     /// Draws nearby Noggins toward it after it lands; eaten at the end of the turn.
@@ -55,7 +55,7 @@ nonisolated enum Special: String, CaseIterable, Sendable {
     }
 }
 
-nonisolated struct NogginKind: Hashable, Sendable {
+nonisolated struct NogginKind: Hashable, Codable, Sendable {
     var breed: Breed
     var tier: Tier
     var special: Special? = nil

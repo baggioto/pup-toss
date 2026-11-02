@@ -19,6 +19,15 @@ The app opens on a home screen with your personal best in the corner. **Play** s
 - **Turn end:** a turn ends only when nothing moves, no merge is animating, and a final check finds nothing left to merge.
 - **Fouls:** a Noggin resting behind the dashed foul line at the end of a turn is removed and counts as a foul. 3 fouls ends the game.
 
+### Breeds per round
+
+Every round starts with **Stray, Iggy, Shiba and Husky**. **Pug** joins at 500 points and **Dalmatian** at 1,500, each announced with a "New breed!" banner. The pool lives in `BreedPool.standard`.
+
+### Saving and sound
+
+- **Continue:** leaving the app (or going Home mid-round) pauses and saves the round; the home screen then offers Continue and New game. Game over clears the save.
+- **Sound:** every effect is synthesised in code at launch (`SoundEngine`), so the app ships no audio files: bonks and thuds scaled to impact and Noggin size, the band's ticks and snap, merge pops that rise with the chain, a Top Dog fanfare, barks, a Bone chomp, puddle splashes, foul, goal and unlock chimes. It uses the ambient audio session (respects the silent switch, mixes with music). The pause menu has a Sound toggle.
+
 ### Gameplay extras
 
 - **Aim line bounces:** the preview reflects once off the hedge or a rock, so bank shots can be lined up.
@@ -114,6 +123,10 @@ xcodebuild -project PupToss.xcodeproj -scheme PupToss \
   -destination 'platform=iOS Simulator,name=iPhone 17' test
 ```
 
+### Tuning panel (debug builds only)
+
+Pause ▸ **Tuning (debug)** opens live sliders for friction, drag, curve, max spin, throw power, the three bounces, both merge gaps, the merge speed, Bone pull, Bulldog weight, and sand and puddle friction. Changes apply immediately and are remembered between launches. **Copy values** puts the set on the clipboard as Swift, ready to paste into `Tuning`'s defaults in `PupToss/Core/Tuning.swift`; **Reset to defaults** restores the shipped values.
+
 ### Debug launch arguments (debug builds only)
 
 | Argument | Effect |
@@ -124,6 +137,7 @@ xcodebuild -project PupToss.xcodeproj -scheme PupToss \
 | `-debugChain -far` | Same, with the other Good Boy about 120 pt away |
 | `-debugLawn` | A random lawn with resting near-miss pairs and a Wild Pup, for checking hints and features |
 | `-debugDrama` | Every throw is a last-chance throw (slow motion and zoom) |
+| `-uiTesting` | Clean start for UI tests: no saved round |
 | `-debugHUD` | Starts with a 6-digit score and a ×4 chain, for checking the top bar |
 | `-exportIcon` | Renders the 1024 × 1024 app icon (light, dark and tinted) into the app's Documents folder |
 | `-exportSheet` | Renders every breed at every size into `Sheet.png` in the Documents folder, for reviewing art |

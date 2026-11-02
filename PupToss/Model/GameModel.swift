@@ -6,6 +6,10 @@ import Observation
 final class GameModel {
     static let maxFouls = 3
     private static let bestKey = "bestScore"
+    private static let soundKey = "soundOn"
+    private static let tuningKey = "tuning"
+
+    let breeds = BreedPool.standard
 
     private(set) var score = 0
     private(set) var best: Int
@@ -22,17 +26,48 @@ final class GameModel {
     private(set) var completedGoal: CompletedGoal?
     /// On the last foul, or with a crowded lawn: the scene warns and adds slow motion to the throw.
     var isLastChance = false
+    /// The latest breed to join the round; `id` changes each time so views can announce it.
+    private(set) var newBreed: NewBreed?
     private var generated = 0
+
+    /// Sound effects on or off, remembered between launches.
+    var isSoundOn: Bool {
+        didSet { UserDefaults.standard.set(isSoundOn, forKey: Self.soundKey) }
+    }
+
+    /// Live physics and merge values. Debug builds remember tuning-panel changes between launches.
+    var tuning: Tuning {
+        didSet {
+            #if DEBUG
+            if let data = try? JSONEncoder().encode(tuning) { UserDefaults.standard.set(data, forKey: Self.tuningKey) }
+            #endif
+        }
+    }
 
     struct CompletedGoal: Equatable {
         let id: Int
         let goal: Goal
     }
 
+    struct NewBreed: Equatable {
+        let id: Int
+        let breed: Breed
+    }
+
     init() {
         best = UserDefaults.standard.integer(forKey: Self.bestKey)
+        isSoundOn = UserDefaults.standard.object(forKey: Self.soundKey) as? Bool ?? true
+        tuning = .standard
+        #if DEBUG
+        if let data = UserDefaults.standard.data(forKey: Self.tuningKey),
+           let saved = try? JSONDecoder().decode(Tuning.self, from: data) {
+            tuning = saved
+        }
+        #endif
         reset()
     }
+
+    var availableBreeds: [Breed] { breeds.available(at: score) }
 
     func reset() {
         score = 0
@@ -45,6 +80,7 @@ final class GameModel {
         isNewBest = false
         goals = GoalTracker(order: Goal.allCases.shuffled())
         completedGoal = nil
+        newBreed = nil
         isLastChance = false
         generated = 0
         upcoming = (0..<3).map { _ in nextKind() }
@@ -60,7 +96,7 @@ final class GameModel {
     @discardableResult
     func recordMerge(into tier: Tier) -> Goal? {
         guard let done = goals.recordMerge(into: tier, chain: chain) else { return nil }
-        score += done.bonus
+        addScore(done.bonus)
         completedGoal = CompletedGoal(id: (completedGoal?.id ?? 0) + 1, goal: done)
         return done
     }
@@ -74,8 +110,37 @@ final class GameModel {
     }
 
     func award(_ points: Int, popped: Bool) {
-        score += points
+        addScore(points)
         if popped { pops += 1 } else { merges += 1 }
+    }
+
+    private func addScore(_ points: Int) {
+        let old = score
+        score += points
+        if let breed = breeds.unlocked(from: old, to: score).last {
+            newBreed = NewBreed(id: (newBreed?.id ?? 0) + 1, breed: breed)
+        }
+    }
+
+    // MARK: Saving
+
+    /// The model's half of a saved round; the scene adds the lawn.
+    func snapshot(pieces: [SavedGame.Piece], loaded: NogginKind?, features: LawnFeatures) -> SavedGame {
+        SavedGame(score: score, fouls: fouls, throwsMade: throwsMade, merges: merges, pops: pops,
+                  upcoming: upcoming, generated: generated, goals: goals,
+                  pieces: pieces, loaded: loaded, features: features)
+    }
+
+    func restore(_ game: SavedGame) {
+        reset()
+        score = game.score
+        fouls = game.fouls
+        throwsMade = game.throwsMade
+        merges = game.merges
+        pops = game.pops
+        upcoming = game.upcoming
+        generated = game.generated
+        goals = game.goals
     }
 
     /// Returns true when this foul ends the game.
@@ -98,7 +163,7 @@ final class GameModel {
         }
     }
 
-    /// Only Pups are thrown; bigger tiers exist only through merging. From the sixth piece on, a
+    /// Only Pups of the breeds in play are thrown; bigger tiers exist only through merging. From the sixth piece on, a
     /// special turns up now and then: Wild Pup 6%, Bone 4%, Bulldog 4%.
     private func nextKind() -> NogginKind {
         generated += 1
@@ -108,6 +173,6 @@ final class GameModel {
             if roll < 0.10 { return .special(.bone) }
             if roll < 0.14 { return .special(.bulldog) }
         }
-        return NogginKind(breed: Breed.allCases.randomElement() ?? .shiba, tier: .pup)
+        return NogginKind(breed: availableBreeds.randomElement() ?? .shiba, tier: .pup)
     }
 }

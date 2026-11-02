@@ -7,11 +7,17 @@ final class GameScene: SKScene {
     static let sceneSize = CGSize(width: 390, height: 844)
 
     private let model: GameModel
-    private let rolling = RollingPhysics()
+    private var tuning: Tuning { model.tuning }
+    private var rolling: RollingPhysics { model.tuning.rolling }
+    /// The round's layout as generated; `features` is it with the current sand and puddle tuning.
+    private var baseFeatures = LawnFeatures.none
+    private var appliedTuning = Tuning.standard
+    private var pendingRestore: SavedGame?
+    private let walls = SKNode()
+    private let sound = SoundEngine.shared
     private let lawnRect = CGRect(x: 16, y: 40, width: 358, height: 676)
     private let foulY: CGFloat = 236
     private let anchor = CGPoint(x: 195, y: 148)
-    private let maxSpin: CGFloat = 9
     private let rollingStep: CGFloat = 1.0 / 120.0
 
     private let shadowLayer = SKNode()
@@ -41,8 +47,6 @@ final class GameScene: SKScene {
     private var sinceMergeCheck: TimeInterval = 0
     /// Merges whose animation hasn't finished; the turn can't end while any are running.
     private var activeMerges = 0
-    /// Pieces slower than this can merge while the rest of the lawn is still moving.
-    private let mergeCheckSpeed: CGFloat = 30
     private let mergeCheckInterval: TimeInterval = 0.1
     private var scheduled: [(time: TimeInterval, action: () -> Void)] = []
 
@@ -102,7 +106,12 @@ final class GameScene: SKScene {
         }
         addChild(slingshot)
         buildAimGuide()
-        startRound()
+        if let pending = pendingRestore {
+            pendingRestore = nil
+            restore(pending)
+        } else {
+            startRound()
+        }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-debugGoodBoys") { debugSpawnGoodBoys() }
         if ProcessInfo.processInfo.arguments.contains("-debugChain") { debugSpawnChain() }
@@ -121,7 +130,7 @@ final class GameScene: SKScene {
             let node = NogginNode(kind: NogginKind(breed: .shiba, tier: .goodBoy))
             node.position = CGPoint(x: x, y: y)
             add(node)
-            node.activatePhysics(velocity: .zero, spin: 0)
+            node.activatePhysics(velocity: .zero, spin: 0, bounce: tuning.nogginBounce)
             pieces.append(node)
         }
         phase = .rolling
@@ -136,7 +145,7 @@ final class GameScene: SKScene {
             let node = NogginNode(kind: NogginKind(breed: .husky, tier: tier))
             node.position = CGPoint(x: x, y: y)
             add(node)
-            node.activatePhysics(velocity: .zero, spin: 0)
+            node.activatePhysics(velocity: .zero, spin: 0, bounce: tuning.nogginBounce)
             pieces.append(node)
         }
         phase = .rolling
@@ -153,7 +162,7 @@ final class GameScene: SKScene {
             let node = NogginNode(kind: kind)
             node.position = CGPoint(x: x, y: y)
             add(node)
-            node.activatePhysics(velocity: .zero, spin: 0)
+            node.activatePhysics(velocity: .zero, spin: 0, bounce: tuning.nogginBounce)
             pieces.append(node)
         }
         after(0.4) { [weak self] in self?.updateHints() }
@@ -188,7 +197,55 @@ final class GameScene: SKScene {
     #endif
 
     func restart() {
+        SaveStore.clear()
         startRound()
+    }
+
+    /// The round as it stands, for saving when the app goes to the background. `nil` once the game
+    /// is over (nothing to continue).
+    func snapshot() -> SavedGame? {
+        guard phase != .gameOver, !model.isGameOver else { return nil }
+        let resting = pieces.filter { !$0.isMerging && !$0.kind.isVisitor && $0.physicsBody != nil }
+        return model.snapshot(pieces: resting.map { SavedGame.Piece(kind: $0.kind, position: $0.position) },
+                              loaded: loaded?.kind, features: baseFeatures)
+    }
+
+    /// Rebuilds a saved round. Saved mid-throw, the lawn settles and the turn finishes on resume.
+    func restore(_ game: SavedGame) {
+        // Not on screen yet: rebuild once the scene is set up.
+        guard pieceLayer.parent != nil else {
+            pendingRestore = game
+            return
+        }
+        for node in pieces { remove(node) }
+        if let loaded { remove(loaded) }
+        loaded = nil
+        scheduled.removeAll()
+        activeMerges = 0
+        boneLure = nil
+        endDrama(animated: false)
+        model.restore(game)
+        baseFeatures = game.features
+        drawFeatures()
+        for piece in game.pieces {
+            let node = NogginNode(kind: piece.kind)
+            node.position = piece.position
+            add(node)
+            node.activatePhysics(velocity: .zero, spin: 0, bounce: tuning.nogginBounce)
+            node.trail = Effects.grassTrail(in: shadowLayer)
+            pieces.append(node)
+        }
+        if let kind = game.loaded {
+            let node = NogginNode(kind: kind)
+            add(node)
+            node.popIn()
+            loaded = node
+            slingshot.load(node)
+            phase = .aiming
+        } else {
+            stillTime = 0
+            phase = .rolling
+        }
     }
 
     // MARK: - Round flow
@@ -212,12 +269,18 @@ final class GameScene: SKScene {
         var generator = SystemRandomNumberGenerator()
         #if DEBUG
         let scenario = ["-debugGoodBoys", "-debugChain", "-debugHUD"].contains(where: ProcessInfo.processInfo.arguments.contains)
-        features = scenario ? .none : LawnFeatures.random(in: lawnRect, above: foulY, using: &generator)
+        baseFeatures = scenario ? .none : LawnFeatures.random(in: lawnRect, above: foulY, using: &generator)
         #else
-        features = LawnFeatures.random(in: lawnRect, above: foulY, using: &generator)
+        baseFeatures = LawnFeatures.random(in: lawnRect, above: foulY, using: &generator)
         #endif
+        drawFeatures()
+    }
+
+    private func drawFeatures() {
+        featureLayer.removeAllChildren()
+        features = baseFeatures.with(sand: tuning.sand, puddle: tuning.puddle)
         for patch in features.patches {
-            featureLayer.addChild(patch.surface == .sand ? Effects.sandPatch(radius: patch.radius) : Effects.puddle(radius: patch.radius))
+            featureLayer.addChild(patch.ground == .puddle ? Effects.puddle(radius: patch.radius) : Effects.sandPatch(radius: patch.radius))
             featureLayer.children.last?.position = patch.center
         }
         for rock in features.rocks {
@@ -225,7 +288,7 @@ final class GameScene: SKScene {
             node.position = rock.center
             let body = SKPhysicsBody(circleOfRadius: rock.radius)
             body.isDynamic = false
-            body.restitution = 0.8
+            body.restitution = tuning.rockBounce
             body.friction = 0.2
             body.categoryBitMask = PhysicsCategory.wall
             node.physicsBody = body
@@ -251,7 +314,7 @@ final class GameScene: SKScene {
     }
 
     private func launch(_ node: NogginNode, velocity: CGVector, spin: CGFloat) {
-        node.activatePhysics(velocity: velocity, spin: spin)
+        node.activatePhysics(velocity: velocity, spin: spin, bounce: tuning.nogginBounce)
         pieces.append(node)
         loaded = nil
         model.chain = 0
@@ -265,7 +328,7 @@ final class GameScene: SKScene {
         model.isLastChance = false
         if node.kind.special == .bulldog, let body = node.physicsBody {
             // Four times the weight and a dull bounce: it ploughs through instead of rebounding.
-            body.mass *= 4
+            body.mass *= tuning.bulldogWeight
             body.restitution = 0.3
         }
     }
@@ -278,7 +341,8 @@ final class GameScene: SKScene {
             return body.velocity.length < maxSpeed
         }
         let groups = MergeEngine.groups(
-            in: candidates.enumerated().map { MergePiece(id: $0.offset, kind: $0.element.kind, position: $0.element.position) }
+            in: candidates.enumerated().map { MergePiece(id: $0.offset, kind: $0.element.kind, position: $0.element.position) },
+            gaps: tuning.gaps
         )
         guard !groups.isEmpty else { return false }
         model.chain += 1
@@ -310,6 +374,7 @@ final class GameScene: SKScene {
             let kind = NogginKind(breed: group.kind.breed, tier: group.kind.tier.next ?? .topDog)
             if let goal = self.model.recordMerge(into: kind.tier) {
                 Effects.floatingText("Goal! +\(goal.bonus)", at: target + CGVector(dx: 0, dy: 70), color: UIColor(hex: 0x8EC5FF), size: 24, in: self.fxLayer)
+                self.sound.play(.goal)
                 self.notifyHaptic.notificationOccurred(.success)
             }
             if group.pops {
@@ -329,7 +394,7 @@ final class GameScene: SKScene {
         let node = NogginNode(kind: kind)
         node.position = point.clamped(to: lawnRect.insetBy(dx: kind.radius + 2, dy: kind.radius + 2))
         add(node)
-        node.activatePhysics(velocity: .zero, spin: 0)
+        node.activatePhysics(velocity: .zero, spin: 0, bounce: tuning.nogginBounce)
         node.popIn()
         node.react(.happy, for: 0.8)
         node.trail = Effects.grassTrail(in: shadowLayer)
@@ -338,6 +403,7 @@ final class GameScene: SKScene {
         callFriends(of: node)
         Effects.confetti(at: node.position, colors: NogginArt.colors(for: kind.breed), amount: 10, in: fxLayer)
         heavyHaptic.impactOccurred(intensity: 0.7)
+        sound.play(.pop, pitch: (1 + 0.08 * Float(max(0, model.chain - 1))) * Float.random(in: 0.97...1.03))
     }
 
     /// A Top Dog never stays on the lawn: it pops in, wiggles and hops, then bursts for the bonus.
@@ -350,6 +416,7 @@ final class GameScene: SKScene {
         node.popIn()
         node.mood = .happy
         node.addChild(Effects.crownSparkles(radius: kind.radius))
+        sound.play(.bark, pitch: 0.85)
         shockwave(at: node.position, reach: 130, strength: 300, sparing: nil)
         Effects.confetti(at: node.position, colors: [UIColor(hex: 0xFFC93C), .white], amount: 8, in: fxLayer)
         heavyHaptic.impactOccurred(intensity: 1)
@@ -371,6 +438,7 @@ final class GameScene: SKScene {
             let center = node.position
             self.remove(node)
             Effects.popBurst(at: center, in: self.fxLayer)
+            self.sound.play(.fanfare)
             Effects.confetti(at: center, colors: NogginArt.colors(for: kind.breed) + [UIColor(hex: 0xFFC93C)], amount: 24, in: self.fxLayer)
             Effects.floatingText("TOP DOG! +\(points)", at: center + CGVector(dx: 0, dy: 40), color: UIColor(hex: 0xFFC93C), size: 30, in: self.fxLayer)
             self.shockwave(at: center, reach: 170, strength: 380, sparing: nil)
@@ -395,15 +463,15 @@ final class GameScene: SKScene {
     /// Matching pieces within twice the merge distance roll toward a freshly merged piece, aimed to
     /// stop just inside merge range. Anything in the way still blocks them physically.
     private func callFriends(of node: NogginNode) {
-        let mergeDistance = 2 * node.radius + node.kind.tier.mergeGap
+        let mergeDistance = 2 * node.radius + tuning.gaps.gap(for: node.kind.tier)
         for friend in pieces where friend !== node && friend.kind == node.kind && !friend.isMerging {
             guard let body = friend.physicsBody else { continue }
             let offset = node.position - friend.position
             let distance = offset.length
-            guard distance > mergeDistance - node.kind.tier.mergeGap * 0.5, distance < mergeDistance * 2 else { continue }
+            guard distance > mergeDistance - tuning.gaps.gap(for: node.kind.tier) * 0.5, distance < mergeDistance * 2 else { continue }
             // Travel needed to end half a gap from the new piece's edge; speed from v² = 2·friction·d,
             // padded for drag.
-            let travel = distance - (2 * node.radius + node.kind.tier.mergeGap * 0.5)
+            let travel = distance - (2 * node.radius + tuning.gaps.gap(for: node.kind.tier) * 0.5)
             let speed = sqrt(2 * rolling.friction * travel) * 1.15
             body.velocity = offset.normalized * speed
             friend.squish(0.3)
@@ -417,6 +485,7 @@ final class GameScene: SKScene {
             node.physicsBody = nil
             if node.kind.special == .bone {
                 Effects.floatingText("Chomp!", at: node.position + CGVector(dx: 0, dy: 26), color: .white, size: 20, in: fxLayer)
+                sound.play(.chomp)
                 Effects.dust(at: node.position, intensity: 0.6, color: UIColor(hex: 0xF6EBD5), in: fxLayer)
                 node.run(.group([.scale(to: 0.2, duration: 0.3), .fadeOut(withDuration: 0.3)]))
             } else {
@@ -456,10 +525,12 @@ final class GameScene: SKScene {
             }
             gameEnds = model.recordFoul()
             Effects.floatingText("Foul!", at: CGPoint(x: anchor.x, y: foulY + 30), color: UIColor(hex: 0xFF5A6E), size: 30, in: fxLayer)
+            sound.play(.foul)
             notifyHaptic.notificationOccurred(.error)
         }
         if gameEnds {
             phase = .gameOver
+            SaveStore.clear()
             after(0.7) { [weak self] in self?.model.finish() }
             #if DEBUG
             if autoplay { after(1.5) { [weak self] in print("[game] over"); self?.startRound() } }
@@ -481,6 +552,7 @@ final class GameScene: SKScene {
         runScheduled()
         slingshot.update(dt: CGFloat(realDt))
         updateBoneLure(dt: dt)
+        if appliedTuning != tuning { applyTuning() }
 
         // Rolling physics runs in fixed 1/120 s steps so throws behave the same at any frame rate.
         rollingDebt += CGFloat(dt)
@@ -518,7 +590,7 @@ final class GameScene: SKScene {
             sinceMergeCheck += dt
             if sinceMergeCheck >= mergeCheckInterval {
                 sinceMergeCheck = 0
-                mergeCheck(maxSpeed: mergeCheckSpeed)
+                mergeCheck(maxSpeed: tuning.mergeSpeed)
             }
             // The turn ends only when nothing moves, no merge is animating, and a full check finds nothing.
             if activeMerges == 0, isLawnStill() {
@@ -531,6 +603,19 @@ final class GameScene: SKScene {
                 stillTime = 0
             }
         }
+    }
+
+    /// Pushes tuning-panel changes into bodies that already exist.
+    private func applyTuning() {
+        appliedTuning = tuning
+        walls.physicsBody?.restitution = tuning.hedgeBounce
+        for node in featureLayer.children where node.physicsBody != nil {
+            node.physicsBody?.restitution = tuning.rockBounce
+        }
+        for node in pieces where node.kind.special != .bulldog {
+            node.physicsBody?.restitution = tuning.nogginBounce
+        }
+        features = baseFeatures.with(sand: tuning.sand, puddle: tuning.puddle)
     }
 
     /// Grass flecks behind fast rolls, and skid marks where a Noggin curves hard.
@@ -552,6 +637,7 @@ final class GameScene: SKScene {
             if surface == .puddle, speed > 40, clock - node.lastSkid > 0.14 {
                 node.lastSkid = clock
                 Effects.ripple(at: node.position, radius: node.radius, in: marksLayer)
+                if speed > 160 { sound.play(.splash, volume: Float(min(1, speed / 600)), pitch: Float.random(in: 0.9...1.15)) }
             }
 
             if abs(body.angularVelocity) > 3.5, speed > 120, clock - node.lastSkid > 0.035 {
@@ -565,7 +651,7 @@ final class GameScene: SKScene {
     private func updateMoods() {
         let resting = pieces.filter { !$0.isMerging && $0.physicsBody != nil && !$0.kind.isVisitor }
         for node in resting {
-            let reach = (2 * node.radius + node.kind.tier.mergeGap) * 1.8
+            let reach = (2 * node.radius + tuning.gaps.gap(for: node.kind.tier)) * 1.8
             let friendNearby = resting.contains { other in
                 other !== node && other.position.distance(to: node.position) < reach && Self.couldMerge(node.kind, other.kind)
             }
@@ -591,7 +677,7 @@ final class GameScene: SKScene {
                 for b in resting.dropFirst(i + 1) where Self.couldMerge(a.kind, b.kind) {
                     let offset = b.position - a.position
                     let gap = offset.length - a.radius - b.radius
-                    let mergeGap = min(a.kind.tier.mergeGap, b.kind.tier.mergeGap)
+                    let mergeGap = min(tuning.gaps.gap(for: a.kind.tier), tuning.gaps.gap(for: b.kind.tier))
                     guard gap > mergeGap, gap <= mergeGap + 55 else { continue }
                     let direction = offset.normalized
                     pairs.append((a.position + direction * a.radius, b.position + direction * -b.radius, gap))
@@ -627,6 +713,7 @@ final class GameScene: SKScene {
            let body = bone.physicsBody, body.velocity.length < 60, !bone.isMerging {
             boneLure = (bone, clock + 1.6)
             Effects.floatingText("Fetch!", at: bone.position + CGVector(dx: 0, dy: 30), color: .white, size: 22, in: fxLayer)
+            sound.play(.bark, volume: 0.8)
             Effects.shockRing(at: bone.position, radius: 170, in: fxLayer)
             thrown = nil
         }
@@ -637,7 +724,7 @@ final class GameScene: SKScene {
             let offset = lure.bone.position - node.position
             let distance = offset.length
             guard distance < reach, distance > node.radius + lure.bone.radius + 4 else { continue }
-            let pull = 300 + 500 * (1 - distance / reach)
+            let pull = (300 + 500 * (1 - distance / reach)) * tuning.bonePull
             body.velocity += offset.normalized * (pull * CGFloat(dt))
             node.mood = .happy
         }
@@ -758,6 +845,7 @@ final class GameScene: SKScene {
         haptics.updateStretch(stretch)
         if Int(pull.length / 14) != Int(previous / 14) {
             haptics.tick(0.25 + 0.5 * stretch)
+            sound.play(.tick, volume: 0.5, pitch: 0.8 + Float(stretch) * 0.7)
         }
         // A tight band makes the loaded Noggin nervous.
         loaded?.mood = stretch > 0.75 ? .nervous : .calm
@@ -771,8 +859,9 @@ final class GameScene: SKScene {
         let pull = slingshot.pull
         loaded?.mood = .calm
         if pull.length >= Slingshot.minPull {
-            slingshot.fire(velocity: pull * -Slingshot.launchScale, spin: spin(for: dragPath))
+            slingshot.fire(velocity: pull * (-Slingshot.launchScale * tuning.power), spin: spin(for: dragPath))
             haptics.snap()
+            sound.play(.snap, volume: 0.6 + 0.4 * Float(pull.length / Slingshot.maxPull))
             phase = .resolving
         } else {
             haptics.endStretch()
@@ -791,7 +880,7 @@ final class GameScene: SKScene {
 
     /// A pull that bows to one side curves the throw the opposite way.
     private func spin(for path: [CGVector]) -> CGFloat {
-        CurveGesture.bend(of: path) * maxSpin
+        CurveGesture.bend(of: path) * tuning.maxSpin
     }
 
     private func updateAim(_ pull: CGVector) {
@@ -801,7 +890,7 @@ final class GameScene: SKScene {
         }
         let path = rolling.predictPath(
             from: anchor,
-            velocity: pull * -Slingshot.launchScale,
+            velocity: pull * (-Slingshot.launchScale * tuning.power),
             spin: spin(for: dragPath),
             radius: loaded.radius,
             bounds: lawnRect,
@@ -831,7 +920,7 @@ final class GameScene: SKScene {
         }
         let probeID = probe.count
         probe.append(MergePiece(id: probeID, kind: kind, position: point))
-        return MergeEngine.groups(in: probe).contains { $0.ids.contains(probeID) }
+        return MergeEngine.groups(in: probe, gaps: tuning.gaps).contains { $0.ids.contains(probeID) }
     }
 
     private func hideAim() {
@@ -885,9 +974,8 @@ final class GameScene: SKScene {
         hedge.zPosition = 0.6
         addChild(hedge)
 
-        let walls = SKNode()
         let body = SKPhysicsBody(edgeLoopFrom: lawnPath)
-        body.restitution = 0.55
+        body.restitution = tuning.hedgeBounce
         body.friction = 0.1
         body.categoryBitMask = PhysicsCategory.wall
         walls.physicsBody = body
@@ -936,6 +1024,10 @@ extension GameScene: @preconcurrency SKPhysicsContactDelegate {
         if clock - lastHaptic > 0.06 {
             lastHaptic = clock
             haptics.thud(intensity, againstWall: a == nil || b == nil)
+            // Bigger Noggins knock lower; harder hits are louder and a touch higher.
+            let size = Float([a, b].compactMap { $0?.radius }.max() ?? Tier.pup.radius)
+            let pitch = Float(Tier.pup.radius) / size * (0.9 + 0.25 * Float(intensity)) * Float.random(in: 0.94...1.06)
+            sound.play(a == nil || b == nil ? .thud : .bonk, volume: 0.25 + 0.75 * Float(intensity), pitch: pitch)
         }
     }
 }

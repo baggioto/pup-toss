@@ -25,7 +25,7 @@ nonisolated enum MergeEngine {
     /// Proximity is transitive: A near B near C is one group even if A and C are far apart.
     /// A Wild Pup joins the largest group of Pups it touches, whatever their breed; it never joins
     /// another Wild Pup alone. Bones and Bulldogs never merge.
-    static func groups(in pieces: [MergePiece]) -> [MergeGroup] {
+    static func groups(in pieces: [MergePiece], gaps: MergeGaps = .standard) -> [MergeGroup] {
         var parent = Array(pieces.indices)
 
         func root(_ i: Int) -> Int {
@@ -45,7 +45,7 @@ nonisolated enum MergeEngine {
         for i in normals {
             for j in normals where j > i {
                 let a = pieces[i], b = pieces[j]
-                guard a.kind == b.kind, near(a, b, gap: a.kind.tier.mergeGap) else { continue }
+                guard a.kind == b.kind, near(a, b, gap: gaps.gap(for: a.kind.tier)) else { continue }
                 parent[root(i)] = root(j)
             }
         }
@@ -59,7 +59,7 @@ nonisolated enum MergeEngine {
         for w in pieces.indices where pieces[w].kind.isWild {
             let wild = pieces[w]
             let touching = normals.filter { i in
-                pieces[i].kind.tier == .pup && near(wild, pieces[i], gap: Tier.pup.mergeGap)
+                pieces[i].kind.tier == .pup && near(wild, pieces[i], gap: gaps.pup)
             }
             let best = touching.max { a, b in
                 let sizeA = clusters[root(a)]?.count ?? 0, sizeB = clusters[root(b)]?.count ?? 0

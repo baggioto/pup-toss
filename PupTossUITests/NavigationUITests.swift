@@ -6,8 +6,9 @@ nonisolated final class NavigationUITests: XCTestCase {
     }
 
     @MainActor
-    func testHomeToGameToPauseAndBack() {
+    func testHomeToGameToPauseAndContinue() {
         let app = XCUIApplication()
+        app.launchArguments = ["-uiTesting"]
         app.launch()
 
         let best = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Personal best'")).firstMatch
@@ -24,7 +25,10 @@ nonisolated final class NavigationUITests: XCTestCase {
 
         pause.tap()
         app.buttons["Home"].tap()
-        XCTAssertTrue(app.buttons["Play"].waitForExistence(timeout: 5), "Home is back")
+        // Leaving mid-round keeps it: home now offers Continue.
+        XCTAssertTrue(app.buttons["Continue"].waitForExistence(timeout: 5), "Home offers Continue")
         XCTAssertTrue(best.exists)
+        app.buttons["Continue"].tap()
+        XCTAssertTrue(pause.waitForExistence(timeout: 5), "Continue returns to the game")
     }
 }
