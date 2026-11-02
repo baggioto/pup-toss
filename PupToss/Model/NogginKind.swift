@@ -9,7 +9,7 @@ nonisolated enum Breed: String, CaseIterable, Sendable {
 nonisolated enum Tier: Int, CaseIterable, Sendable {
     case pup = 1, goodBoy, topDog
 
-    /// The tier three of these merge into; `nil` means three of them pop instead.
+    /// The tier a pair of these merges into; `nil` for the top tier.
     var next: Tier? { Tier(rawValue: rawValue + 1) }
 
     var radius: CGFloat {

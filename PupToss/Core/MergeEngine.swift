@@ -17,7 +17,7 @@ nonisolated struct MergeGroup: Equatable, Sendable {
 }
 
 nonisolated enum MergeEngine {
-    static let requiredCount = 3
+    static let requiredCount = 2
 
     /// Clusters pieces of the same breed and tier whose edges are within their tier's merge gap.
     /// Proximity is transitive: A near B near C is one group even if A and C are far apart.
@@ -74,7 +74,7 @@ nonisolated enum Scoring {
         }
     }
 
-    /// Each piece beyond three adds 50%; the chain step within one throw multiplies.
+    /// Each piece beyond the required two adds 50%; the chain step within one throw multiplies.
     static func points(for group: MergeGroup, chain: Int) -> Int {
         let base = group.kind.tier.next.map(mergePoints(into:)) ?? 0
         let extra = Double(max(0, group.ids.count - MergeEngine.requiredCount)) * 0.5

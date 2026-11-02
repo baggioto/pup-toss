@@ -1,6 +1,6 @@
 # Pup Toss
 
-An iOS game where you fling dog-head pieces called **Noggins** onto a lawn with a slingshot. When three or more of the same breed and size come to rest near each other, they merge into one bigger Noggin. Turn three Good Boys into a Top Dog and it celebrates, then pops off the lawn for a big bonus.
+An iOS game where you fling dog-head pieces called **Noggins** onto a lawn with a slingshot. When two or more of the same breed and size come to rest near each other, they merge into one bigger Noggin. Merge two Good Boys into a Top Dog and it celebrates, then pops off the lawn for a big bonus.
 
 Everything runs on the device: no backend, no accounts, scores stay local.
 
@@ -10,8 +10,8 @@ Everything runs on the device: no backend, no accounts, scores stay local.
 ## How it plays
 
 - **Throw:** pull back on the slingshot. How far you pull sets power, the angle sets direction, and the shape of your drag sets curve: pull back in an arc and the throw bends the opposite way. A dotted line previews the path; the landing ring turns gold when the throw would complete a group.
-- **Merge:** 3 or more Noggins of the same breed and size merge when their edges are within the merge gap, anywhere on the lawn, with no alignment needed.
-- **Sizes:** only Pups are thrown. 3 Pups → Good Boy. 3 Good Boys → Top Dog, which plays a celebration and pops for the bonus. Top Dogs never stay on the lawn.
+- **Merge:** 2 or more Noggins of the same breed and size merge when their edges are within the merge gap, anywhere on the lawn, with no alignment needed.
+- **Sizes:** only Pups are thrown. 2 Pups → Good Boy. 2 Good Boys → Top Dog, which plays a celebration and pops for the bonus. Top Dogs never stay on the lawn.
 - **Chains:** merge checks run throughout every throw, so slow pieces merge as soon as they meet. A new piece calls nearby matching pieces over, and its shockwave can knock others into new groups.
 - **Turn end:** a turn ends only when nothing moves, no merge is animating, and a final check finds nothing left to merge.
 - **Fouls:** a Noggin resting behind the dashed foul line at the end of a turn is removed and counts as a foul. 3 fouls ends the game.
@@ -24,9 +24,9 @@ Shiba, Pug, Dalmatian, Husky. Every breed has identical physics; breed only matt
 
 | Event | Points |
 | --- | --- |
-| Merge into Good Boy (3 Pups) | 30 |
-| Top Dog (3 Good Boys): celebrates, then pops | 500 |
-| Each piece beyond 3 in a group | +50% of that group's points |
+| Merge into Good Boy (2 Pups) | 30 |
+| Top Dog (2 Good Boys): celebrates, then pops | 500 |
+| Each piece beyond 2 in a group | +50% of that group's points |
 | Chain step *n* within one throw | × *n* |
 
 ## Tech
@@ -95,8 +95,8 @@ xcodebuild -project PupToss.xcodeproj -scheme PupToss \
 | --- | --- |
 | `-autoplay` | Throws automatically and logs every turn to the console |
 | `-debugGoodBoys` | Starts with 3 Good Boys side by side |
-| `-debugChain` | 3 Pups that merge into a Good Boy next to 2 Good Boys |
-| `-debugChain -far` | Same, with the 2 Good Boys about 120 pt away |
+| `-debugChain` | 2 Pups that merge into a Good Boy next to another Good Boy |
+| `-debugChain -far` | Same, with the other Good Boy about 120 pt away |
 
 ## Roadmap
 

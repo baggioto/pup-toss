@@ -95,11 +95,11 @@ final class GameScene: SKScene {
         phase = .rolling
     }
 
-    /// Three Pups whose merge lands a Good Boy within merge range of two existing Good Boys.
+    /// Two Pups whose merge lands a Good Boy near an existing Good Boy (about 120 pt away with `-far`).
     private func debugSpawnChain() {
         let far = ProcessInfo.processInfo.arguments.contains("-far")
-        let layout: [(Tier, CGFloat, CGFloat)] = [(.pup, 195, 450), (.pup, 175, 485), (.pup, 215, 485),
-                                                  (.goodBoy, far ? 315 : 275, 470), (.goodBoy, far ? 135 : 235, far ? 575 : 540)]
+        let layout: [(Tier, CGFloat, CGFloat)] = [(.pup, 175, 470), (.pup, 215, 470),
+                                                  (.goodBoy, far ? 315 : 275, 470)]
         for (tier, x, y) in layout {
             let node = NogginNode(kind: NogginKind(breed: .husky, tier: tier))
             node.position = CGPoint(x: x, y: y)
