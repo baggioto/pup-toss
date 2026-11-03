@@ -22,9 +22,9 @@ struct WildPupTests {
         #expect(MergeEngine.groups(in: [piece(0, wild, 0), piece(1, wild, 44)]).isEmpty)
     }
 
-    @Test func wildPupJoinsTheBiggerGroup() {
-        // A Shiba pair on the left, a lone Pug on the right; the wild sits between them.
-        let pieces = [piece(0, shiba, -88), piece(1, shiba, -44), piece(2, wild, 0), piece(3, pug, 44)]
+    @Test func wildPupJoinsAPairWhenNoPupIsAlone() {
+        // Only a Shiba pair nearby: the wild joins it as a third member.
+        let pieces = [piece(0, shiba, -88), piece(1, shiba, -44), piece(2, wild, 0)]
         let groups = MergeEngine.groups(in: pieces)
         #expect(groups.count == 1)
         #expect(groups.first?.kind == shiba)

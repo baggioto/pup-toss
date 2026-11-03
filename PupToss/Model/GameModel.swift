@@ -37,8 +37,6 @@ final class GameModel {
     private(set) var goals = GoalTracker()
     /// The latest finished goal; `id` changes each time so views can celebrate it.
     private(set) var completedGoal: CompletedGoal?
-    /// On the last foul, or with a crowded lawn: the scene warns and adds slow motion to the throw.
-    var isLastChance = false
     /// The latest breed to join the round; `id` changes each time so views can announce it.
     private(set) var newBreed: NewBreed?
     private var generated = 0
@@ -76,6 +74,17 @@ final class GameModel {
            let saved = try? JSONDecoder().decode(Tuning.self, from: data) {
             tuning = saved
         }
+        // `-tuning '{"friction":480}'` overrides individual values for this launch (for test runs).
+        let arguments = ProcessInfo.processInfo.arguments
+        if let flag = arguments.firstIndex(of: "-tuning"), arguments.indices.contains(flag + 1),
+           let overrides = try? JSONSerialization.jsonObject(with: Data(arguments[flag + 1].utf8)) as? [String: Any],
+           var merged = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(Tuning.standard))) as? [String: Any] {
+            merged.merge(overrides) { $1 }
+            if let data = try? JSONSerialization.data(withJSONObject: merged),
+               let custom = try? JSONDecoder().decode(Tuning.self, from: data) {
+                tuning = custom
+            }
+        }
         #endif
         reset()
     }
@@ -94,7 +103,6 @@ final class GameModel {
         goals = GoalTracker(order: Goal.allCases.shuffled())
         completedGoal = nil
         newBreed = nil
-        isLastChance = false
         chainDeadline = nil
         whistles = 0
         isWhistleArmed = false

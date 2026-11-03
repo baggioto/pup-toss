@@ -1,15 +1,18 @@
 import CoreGraphics
 
 /// Every number that shapes how the game feels, in one place so the debug tuning panel can change
-/// them live. The defaults are the shipped values.
+/// them live. The defaults are the shipped values, tuned for a swift game: Noggins stop fast
+/// (friction 560, drag 1.1) with extra throw power (1.25×) so a full pull still reaches the top
+/// hedge, merges start early and animate quickly, and events come often. Measured with the
+/// aiming autoplay: about 1.2 s from release to a settled lawn, against 1.4 s before.
 nonisolated struct Tuning: Codable, Equatable, Sendable {
     // Rolling
-    var friction: CGFloat = 360
-    var drag: CGFloat = 0.7
+    var friction: CGFloat = 560
+    var drag: CGFloat = 1.1
     var curve: CGFloat = 11
     var maxSpin: CGFloat = 9
     /// Multiplies launch speed.
-    var power: CGFloat = 1
+    var power: CGFloat = 1.25
 
     // Bounces
     var nogginBounce: CGFloat = 0.62
@@ -20,7 +23,11 @@ nonisolated struct Tuning: Codable, Equatable, Sendable {
     var pupGap: CGFloat = 14
     var goodBoyGap: CGFloat = 21
     /// Pieces slower than this merge while the rest of the lawn is still moving.
-    var mergeSpeed: CGFloat = 30
+    var mergeSpeed: CGFloat = 80
+    /// How long two Noggins take to pull together and merge, in seconds.
+    var mergeDuration: CGFloat = 0.14
+    /// How long the lawn must stay still before the turn ends, in seconds.
+    var settleWait: CGFloat = 0.15
 
     // Specials and lawn
     var bonePull: CGFloat = 1
@@ -40,13 +47,14 @@ nonisolated struct Tuning: Codable, Equatable, Sendable {
     /// Share of the merged pieces' motion the new piece keeps (0 = appears at rest).
     var momentum: CGFloat = 0.8
     /// How much a merge's shockwave steers neighbours toward their own matches (0 = pushes straight out).
-    var matchmaker: CGFloat = 1
+    var matchmaker: CGFloat = 0.5
     /// Merges within this many seconds of each other keep the chain going.
-    var chainWindow: CGFloat = 3
+    var chainWindow: CGFloat = 2.5
     /// Seconds between idle scoots while aiming (0 = off).
-    var scootInterval: CGFloat = 1.4
-    /// How far beyond merge range an idle dog will scoot toward a match, in pt.
-    var magnetRange: CGFloat = 140
+    var scootInterval: CGFloat = 3.5
+    /// How far beyond merge range an idle dog will scoot toward a match, in pt. A scoot only closes
+    /// half the gap, so the player still has to finish the merge.
+    var magnetRange: CGFloat = 60
     /// Turns without merging before a Noggin falls asleep (0 = never).
     var boredTurns: CGFloat = 21
     /// Chance the next Pup is a breed with a lonely Pup on the lawn.
@@ -54,13 +62,13 @@ nonisolated struct Tuning: Codable, Equatable, Sendable {
 
     // Pressure
     /// Throws between stray Pups wandering in at the start (0 = off); shortens as the score grows.
-    var strayEvery: CGFloat = 5
+    var strayEvery: CGFloat = 4
     /// Chance a turn has a gust of wind (from the 6th throw).
-    var gustChance: CGFloat = 0.25
+    var gustChance: CGFloat = 0.3
     /// Typical gust strength, in pt/s².
     var gustStrength: CGFloat = 110
     /// Chance per turn of a squirrel dashing across (from the 9th throw).
-    var squirrelChance: CGFloat = 0.08
+    var squirrelChance: CGFloat = 0.12
     /// Chance a Pup arrives as a Mystery Pup (from the 9th piece).
     var mysteryChance: CGFloat = 0.12
 

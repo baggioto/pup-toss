@@ -13,7 +13,7 @@ struct RootView: View {
     private static var startsInGame: Bool {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        return ["-autoplay", "-debugGoodBoys", "-debugChain", "-debugHUD", "-debugLawn", "-debugDrama"].contains(where: arguments.contains)
+        return ["-autoplay", "-debugGoodBoys", "-debugChain", "-debugHUD", "-debugLawn", "-debugWild"].contains(where: arguments.contains)
         #else
         false
         #endif

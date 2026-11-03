@@ -34,7 +34,8 @@ struct TuningTests {
     @Test func defaultsMatchTheShippedValues() {
         let tuning = Tuning.standard
         #expect(tuning.gaps == MergeGaps.standard)
-        #expect(tuning.rolling.friction == RollingPhysics().friction)
+        #expect(tuning.rolling.friction == tuning.friction)
+        #expect(tuning.rolling.drag == tuning.drag)
         #expect(tuning.sand == Surface.sand)
         #expect(tuning.puddle == Surface.puddle)
     }

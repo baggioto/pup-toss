@@ -24,16 +24,11 @@ struct GameView: View {
                 HStack(spacing: 8) {
                     GoalPill(goal: model.goals.current, progress: model.goals.progress)
                     Spacer(minLength: 0)
-                    if model.isLastChance {
-                        LastChancePill()
-                            .transition(.scale(scale: 0.4).combined(with: .opacity))
-                    }
                 }
                 Spacer()
             }
             .padding(.horizontal, 16)
             .padding(.top, 4)
-            .animation(.spring(duration: 0.35, bounce: 0.5), value: model.isLastChance)
             WhistleControl(model: model)
             if let announcing {
                 NewBreedBanner(breed: announcing.breed)
@@ -135,21 +130,6 @@ private struct GoalPill: View {
         .animation(.snappy, value: progress)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Goal: \(goal.title), \(min(progress, goal.target)) of \(goal.target), bonus \(goal.bonus)")
-    }
-}
-
-private struct LastChancePill: View {
-    var body: some View {
-        Text("Last chance!")
-            .font(.rounded(13))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Color(red: 0.93, green: 0.3, blue: 0.36), in: Capsule())
-            .overlay(Capsule().stroke(Color.ink, lineWidth: 2))
-            .phaseAnimator([1.0, 1.08]) { pill, scale in
-                pill.scaleEffect(scale)
-            } animation: { _ in .easeInOut(duration: 0.5) }
     }
 }
 

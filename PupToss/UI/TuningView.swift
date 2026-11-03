@@ -27,6 +27,8 @@ struct TuningView: View {
                     slider("Pup gap", \.pupGap, 0...60, step: 1, unit: "pt")
                     slider("Good Boy gap", \.goodBoyGap, 0...60, step: 1, unit: "pt")
                     slider("Merge while slower than", \.mergeSpeed, 0...200, step: 5, unit: "pt/s")
+                    slider("Merge animation", \.mergeDuration, 0.05...0.5, step: 0.01, unit: "s")
+                    slider("Settle wait", \.settleWait, 0.05...1, step: 0.05, unit: "s")
                 }
                 Section("Specials and lawn") {
                     slider("Bone pull", \.bonePull, 0...3, step: 0.1, unit: "×")
