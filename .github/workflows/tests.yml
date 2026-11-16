@@ -1,0 +1,26 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit-tests:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select latest Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Generate project
+        run: brew install xcodegen && xcodegen generate
+      - name: Run unit tests
+        run: |
+          DEVICE=$(xcrun simctl list devices available | grep -oE 'iPhone [0-9]+[^(]*' | head -1 | sed 's/ *$//')
+          echo "Testing on $DEVICE"
+          xcodebuild test -project PupToss.xcodeproj -scheme PupToss \
+            -destination "platform=iOS Simulator,name=$DEVICE" \
+            -only-testing:PupTossTests \
+            CODE_SIGNING_ALLOWED=NO -quiet
